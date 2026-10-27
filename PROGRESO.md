@@ -17,7 +17,7 @@ Fecha límite: 30/10/2026 23:59. Repositorio: https://github.com/Jesusro-del/dem
 
 | Paso | Rama | Qué agrega | PR | Run |
 |------|------|------------|----|-----|
-| 1 | `pipeline/lint` | Job `lint` y `.gitattributes` (scripts con LF para el runner de Windows) | | |
+| 1 | `pipeline/lint` | Job `lint` y `.gitattributes` (scripts con LF para el runner de Windows) | [#1](https://github.com/Jesusro-del/demo-cicd/pull/1) | [✅ 18 s](https://github.com/Jesusro-del/demo-cicd/actions/runs/40548292822) |
 | 2 | `pipeline/sast` | Job `sast` (Semgrep y Gitleaks) | | |
 | 3 | `pipeline/pruebas` | Jobs `test-unit` y `test-integration` | | |
 | 4 | `pipeline/package` | Jobs `package` y `security` (Trivy en `CRITICAL,HIGH`) | | |
