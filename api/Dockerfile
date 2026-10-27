@@ -6,7 +6,11 @@ ENV NODE_ENV=production
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --omit=dev
+# npm solo hace falta para instalar. En la imagen final no se usa (CMD es node server.js),
+# y el npm que trae node:22-alpine tenía 10 HIGH. Se borra en la misma capa para que no quede en ninguna.
+RUN npm ci --omit=dev \
+ && npm cache clean --force \
+ && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 COPY app.js server.js ./
 
