@@ -20,10 +20,18 @@ Fecha límite: 30/10/2026 23:59. Repositorio: https://github.com/Jesusro-del/dem
 | 1 | `pipeline/lint` | Job `lint` y `.gitattributes` (scripts con LF para el runner de Windows) | [#1](https://github.com/Jesusro-del/demo-cicd/pull/1) | [✅ 18 s](https://github.com/Jesusro-del/demo-cicd/actions/runs/40548292822) |
 | 2 | `pipeline/sast` | Job `sast` (Semgrep y Gitleaks), en paralelo con `lint` | [#2](https://github.com/Jesusro-del/demo-cicd/pull/2) | [✅ 25 s](https://github.com/Jesusro-del/demo-cicd/actions/runs/40548937548) |
 | 3 | `pipeline/pruebas` | Jobs `test-unit` y `test-integration` (`docker compose up`: 24 s) | [#3](https://github.com/Jesusro-del/demo-cicd/pull/3) | [✅ 1 min 13 s](https://github.com/Jesusro-del/demo-cicd/actions/runs/40549435524) |
-| 4 | `pipeline/package` | Jobs `package` y `security` (Trivy en `CRITICAL,HIGH`) | | |
+| 4 | `pipeline/package` | Jobs `package` y `security` (Trivy en `CRITICAL,HIGH`, `fail-fast: false`) | [#4](https://github.com/Jesusro-del/demo-cicd/pull/4) | [🔴 escaneo inicial](https://github.com/Jesusro-del/demo-cicd/actions/runs/40551070125) → [✅ 2 min 37 s](https://github.com/Jesusro-del/demo-cicd/actions/runs/40553045998) |
 | 5 | `pipeline/deploy-dev` | Job `deploy-dev` (kind efímero) | | |
 | 6 | `pipeline/deploy-staging` | Job `deploy-staging` (runner propio, aprobación) | | |
 | 7 | `pipeline/dependabot` | `.github/dependabot.yml` con `cooldown` | | |
+
+### Trivy en CRITICAL,HIGH: de 83 HIGH a 0
+
+| Imagen | HIGH al inicio | Origen | Decisión |
+|--------|:--------------:|--------|----------|
+| web | 47 | Alpine 3.23 de `nginx-unprivileged:1.29-alpine`, rama sin mantenimiento desde mayo | Base `1.30-alpine3.24` (47 → 3) y `apk upgrade --no-cache` para brotli y curl (3 → 0) |
+| api | 11 | 1 en `body-parser` (vía express) y 10 en el `npm` de `node:22-alpine` | `body-parser` 1.20.9 en el lockfile; `npm` y `npx` borrados de la imagen final |
+| db | 25 | Librería estándar de Go 1.24.6 dentro del binario `gosu` | `.trivyignore` con los 25 CVE, justificados (código no alcanzable) y con `exp:2027-01-31` |
 
 Configuración manual pendiente: paquetes públicos, environment `staging` con revisor, ruleset de `main`, runner registrado, namespace y Secret de `demo-staging`.
 
