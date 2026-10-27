@@ -137,6 +137,7 @@ jobs:
       contents: read
       packages: read
     strategy:
+      fail-fast: false              # cada imagen reporta sus hallazgos; si una falla, security sigue en rojo
       matrix:
         servicio: [web, api, db]
     steps:
