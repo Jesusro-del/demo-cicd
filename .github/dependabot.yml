@@ -1,0 +1,22 @@
+# Dependabot: propone PR para mantener al día las acciones (sus SHA), las dependencias de npm y las imágenes base.
+# Cada PR pasa por el pipeline completo, igual que uno mío.
+# cooldown: espera 7 días antes de proponer una versión recién publicada. Si alguien compromete un paquete,
+# casi siempre se detecta en esos días. Semgrep (dependabot-missing-cooldown) pone el pipeline en rojo si falta.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7 }
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7 }
+  - package-ecosystem: npm
+    directory: /api
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7 }
+  - package-ecosystem: docker
+    directories: ["/web", "/api", "/db"]
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7 }
