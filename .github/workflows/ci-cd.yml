@@ -203,3 +203,29 @@ jobs:
           kubectl -n demo-dev describe pods
           kubectl -n demo-dev logs -l app=api --tail=50 || true
           kubectl -n demo-dev logs -l app=db  --tail=50 || true
+
+  deploy-staging:
+    name: 8. Deploy STAGING (con aprobación)
+    needs: deploy-dev
+    if: github.event_name != 'pull_request'
+    runs-on: self-hosted                      # el runner de mi laptop, donde kubectl apunta a Rancher Desktop
+    environment:
+      name: staging                           # con Required reviewers: el job espera la aprobación
+      url: http://localhost:30080
+    defaults:
+      run:
+        # Git Bash con su ruta completa: en Windows, "bash" a secas puede ser el de WSL, que no ve el kubectl
+        # de Rancher Desktop. Mismos flags que GitHub usa para shell: bash.
+        shell: '"C:\Program Files\Git\bin\bash.exe" --noprofile --norc -eo pipefail {0}'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: echo "PREFIJO=ghcr.io/$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')/demo-cicd" >> "$GITHUB_ENV"
+      - name: Desplegar la misma imagen que pasó por DEV
+        run: scripts/desplegar.sh k8s/overlays/staging "$PREFIJO" "sha-${{ github.sha }}"
+      - name: Esperar el rollout
+        run: |
+          kubectl -n demo-staging rollout status deploy/db  --timeout=180s
+          kubectl -n demo-staging rollout status deploy/api --timeout=180s
+          kubectl -n demo-staging rollout status deploy/web --timeout=180s
+      - name: Smoke test
+        run: bash scripts/smoke.sh http://localhost:30080
