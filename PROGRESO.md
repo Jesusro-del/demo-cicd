@@ -21,7 +21,7 @@ Fecha límite: 30/10/2026 23:59. Repositorio: https://github.com/Jesusro-del/dem
 | 2 | `pipeline/sast` | Job `sast` (Semgrep y Gitleaks), en paralelo con `lint` | [#2](https://github.com/Jesusro-del/demo-cicd/pull/2) | [✅ 25 s](https://github.com/Jesusro-del/demo-cicd/actions/runs/40548937548) |
 | 3 | `pipeline/pruebas` | Jobs `test-unit` y `test-integration` (`docker compose up`: 24 s) | [#3](https://github.com/Jesusro-del/demo-cicd/pull/3) | [✅ 1 min 13 s](https://github.com/Jesusro-del/demo-cicd/actions/runs/40549435524) |
 | 4 | `pipeline/package` | Jobs `package` y `security` (Trivy en `CRITICAL,HIGH`, `fail-fast: false`) | [#4](https://github.com/Jesusro-del/demo-cicd/pull/4) | [🔴 escaneo inicial](https://github.com/Jesusro-del/demo-cicd/actions/runs/40551070125) → [✅ 2 min 37 s](https://github.com/Jesusro-del/demo-cicd/actions/runs/40553045998) |
-| 5 | `pipeline/deploy-dev` | Job `deploy-dev` (kind efímero) | | |
+| 5 | `pipeline/deploy-dev` | Job `deploy-dev` (kind efímero). En el PR: skipped. Con `workflow_dispatch`: kind 41 s, rollout 19 s, smoke e integración 8 s | [#5](https://github.com/Jesusro-del/demo-cicd/pull/5) | [✅ PR](https://github.com/Jesusro-del/demo-cicd/actions/runs/40554232446) · [✅ dispatch con DEV](https://github.com/Jesusro-del/demo-cicd/actions/runs/40554244385) |
 | 6 | `pipeline/deploy-staging` | Job `deploy-staging` (runner propio, aprobación) | | |
 | 7 | `pipeline/dependabot` | `.github/dependabot.yml` con `cooldown` | | |
 
