@@ -38,6 +38,12 @@ spec:
             httpGet: { path: /api/health, port: 3000 }
             initialDelaySeconds: 15
             periodSeconds: 15
+          # Al borrar un pod (rolling update), el Service tarda unos segundos en dejar de enviarle conexiones.
+          # Sin esta espera, el pod se apagaba antes y esas conexiones daban 504 en nginx.
+          # Los 5 s caben de sobra en terminationGracePeriodSeconds (30 s por defecto).
+          lifecycle:
+            preStop:
+              sleep: { seconds: 5 }
           resources:
             requests: { cpu: 50m, memory: 64Mi }
             limits: { memory: 128Mi }
