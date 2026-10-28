@@ -1,0 +1,7 @@
+# El estado describe la infraestructura real y puede guardar datos sensibles: no se versiona.
+*.tfstate
+*.tfstate.*
+.terraform/
+crash.log
+*.tfplan
+# .terraform.lock.hcl SÍ se versiona: fija las versiones y los hashes del provider.
