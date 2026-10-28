@@ -36,7 +36,7 @@ flowchart LR
 | 4 | `test-integration` | Docker Compose y Vitest (`fetch`) | La aplicación completa dentro del runner, entrando por nginx: 7 pruebas | Job en rojo y se imprimen los logs de los contenedores | PR y push a `main` |
 | 5 | `package` | Docker Buildx, GitHub Packages (GHCR) | Que las tres imágenes construyan (amd64 y arm64) y se publiquen con tag `sha-<commit>` | Job en rojo; no hay imagen que escanear ni desplegar | PR y push a `main` |
 | 6 | `security` | Grype v0.121.0 (contenedor; `--fail-on high`, solo con parche) | Vulnerabilidades de cada imagen publicada; las aceptadas están en [`.grype.yaml`](.grype.yaml), una por una con su porqué y acotadas al binario | Job en rojo con la tabla de vulnerabilidades en el resumen; nada llega a DEV | PR y push a `main` |
-| 7 | `deploy-dev` | k3d (k3s v1.36.4), kubectl y Kustomize | Despliega en un clúster creado dentro del runner; espera el rollout; smoke test y las 7 pruebas de integración contra Kubernetes | Job en rojo con el diagnóstico de los pods; STAGING no se ofrece | Solo push a `main` |
+| 7 | `deploy-dev` | k3d (k3s v1.36.4), kubectl, Kustomize y OWASP ZAP | Despliega en un clúster creado dentro del runner; espera el rollout; smoke test, las 7 pruebas de integración y un baseline scan de ZAP contra Kubernetes |
 | 8 | `deploy-staging` | Runner propio (Windows), kubectl, Rancher Desktop | Con **aprobación manual** (environment `staging`): despliega la misma imagen, espera el rollout y a que se borren los pods viejos, y corre el smoke contra `http://localhost:30080` | Job en rojo; los datos de Postgres siguen en su volumen | Solo push a `main` (o `workflow_dispatch` sobre `main`), después de aprobar. Un despliegue pendiente se cancela si llega uno más nuevo |
 
 `main` está protegida: no se puede hacer merge si falla `lint`, `sast`, `test-unit`, `test-integration`, `package` (×3) o `security` (×3). Dependabot propone actualizaciones semanales de acciones, npm e imágenes base, con 7 días de `cooldown`.
@@ -229,6 +229,30 @@ En los dos, STAGING no tenía nada que actualizar (en el "antes", los pods ya es
   - *Un secreto en una rama bloqueaba todas*: con `fetch-depth: 0` el checkout trae todas las ramas y TruffleHog las revisaba todas. El secreto falso de la rama temporal puso en rojo también la rama limpia ([40714616225](https://github.com/Jesusro-del/demo-cicd/actions/runs/40714616225)). Ahora revisa solo el historial del commit del run (`--branch`).
   - *El resumen de Grype mentía*: contaba 3 "aceptadas" en imágenes sin `gosu`, porque `ignoredMatches` mezcla lo que descarta `--only-fixed` con lo aceptado en `.grype.yaml`. Ahora se separan por la regla que aplicó Grype.
   - *Docker local no respondía* (`timed out dialing Hyper-V socket` en Rancher Desktop), así que todo se probó en el pipeline, con ramas temporales y `workflow_dispatch`.
+
+### Reto 1: DAST con OWASP ZAP
+
+- **Decisión:** `zap-baseline.py` (imagen `zaproxy/zap-stable:20261016`) dentro de `deploy-dev`, contra la aplicación desplegada en k3d, con los códigos de salida por defecto: cualquier WARN o FAIL no aceptado pone el job en rojo. Corregí con cabeceras en `web/nginx.conf` las siete alertas del primer escaneo. En [`zap/reglas.conf`](zap/reglas.conf) esas siete reglas quedaron en FAIL. El informe se sube como artefacto y el resumen del run lista las alertas.
+- **Alternativas que evalué:**
+  - *`zaproxy/action-baseline`*: más corto de escribir, pero es otra acción que fijar, y por defecto abre un issue en el repositorio con cada escaneo, lo que pide permisos de escritura. La imagen con `docker run` no necesita ningún permiso.
+  - *Full scan*: además de mirar, **ataca** (inyecciones, XSS). Encuentra más, pero tarda mucho más y llena la base de DEV con basura. Para cada push alcanza con el baseline; el full scan tendría sentido de noche o antes de una entrega.
+  - *API scan*: ataca la API a partir de una definición OpenAPI, y la API no tiene una.
+  - *Job aparte después de DEV*: no se puede, porque DEV vive dentro del job `deploy-dev` y muere con él.
+- **Por qué elegí esta:** DEV ya está levantado en el runner; ZAP se monta como un paso más, sin otro clúster y sin permisos nuevos.
+- **Fuentes consultadas:**
+  - [ZAP Baseline Scan](https://www.zaproxy.org/docs/docker/baseline-scan/): opciones `-c`, `-g`, `-r`, `-J` y códigos de salida.
+  - [Cabeceras de seguridad en MDN](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers): `Content-Security-Policy`, `X-Content-Type-Options`, `Permissions-Policy`, `Cross-Origin-*-Policy`.
+  - [OWASP Secure Headers Project](https://owasp.org/www-project-secure-headers/).
+  - [`add_header` de nginx](https://nginx.org/en/docs/http/ngx_http_headers_module.html#add_header): el parámetro `always` y la herencia entre `server` y `location`.
+- **Cómo lo verifiqué:**
+  - Rojo, 7 WARN: [40728141052](https://github.com/Jesusro-del/demo-cicd/actions/runs/40728141052).
+  - Después de las primeras cabeceras, quedaba 1 (COEP): [40729099682](https://github.com/Jesusro-del/demo-cicd/actions/runs/40729099682).
+  - Verde, 0 alertas y 67 reglas pasadas, con el informe como artefacto: [40729885668](https://github.com/Jesusro-del/demo-cicd/actions/runs/40729885668).
+  - PR: [#29](https://github.com/Jesusro-del/demo-cicd/pull/29).
+- **Qué no me funcionó:**
+  - La primera tanda de cabeceras dejó la regla 90004 a medias. Esa regla revisa tres cabeceras (CORP, COEP y COOP) y yo solo había puesto la primera.
+  - El baseline no ejecuta JavaScript, así que nunca llamó a `/api/`, y por eso no vio el `X-Powered-By: Express` de la API. Lo oculté igual con `proxy_hide_header`: el escáner no es la única fuente de verdad.
+- **Cuándo una alerta es un falso positivo y cuándo es aceptar un riesgo:** un falso positivo es una alerta que no describe algo real (por ejemplo, ZAP marca como "información filtrada" un texto que no es sensible). Aceptar el riesgo es reconocer que el problema existe y decidir no arreglarlo, con un porqué. Las dos cosas van en `reglas.conf` como IGNORE, pero el comentario tiene que decir cuál de las dos es. Hoy no hay ninguna.
 
 ## Lo que no está aquí, a propósito
 
