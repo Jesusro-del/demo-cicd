@@ -1,6 +1,59 @@
-# demo-cicd: la aplicación base del LAB-04
+# demo-cicd: libro de visitas con pipeline CI/CD
 
-Curso IF-1116, Tópicos de Tecnologías de Información, semestre 2026-II. Semana 06.
+[![CI/CD](https://github.com/Jesusro-del/demo-cicd/actions/workflows/ci-cd.yml/badge.svg?branch=main)](https://github.com/Jesusro-del/demo-cicd/actions/workflows/ci-cd.yml)
+
+LAB-04 del curso IF-1116, Tópicos de Tecnologías de Información, semestre 2026-II. Jesús Razo Oliva.
+
+Un pipeline de GitHub Actions ([`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml)) que revisa, prueba, empaqueta, escanea y despliega el libro de visitas (web, api y db) a un ambiente DEV efímero y, con aprobación manual, a un STAGING persistente en mi Rancher Desktop. Cada run deja un resumen con las pruebas y las vulnerabilidades por severidad en su página de Actions, para que quien aprueba STAGING sepa qué está aprobando sin abrir ningún log.
+
+## El pipeline
+
+```mermaid
+flowchart LR
+    L["1 lint"] --> TU["3 test-unit"] --> TI["4 test-integration"] --> P["5 package<br/>web · api · db"]
+    S["2 sast"] --> P
+    P --> SEC["6 security<br/>web · api · db"] --> DEV["7 deploy-dev<br/>kind, efímero"] --> AP{"aprobación"} --> STG["8 deploy-staging<br/>Rancher Desktop"]
+    style L fill:#4ba3c7,stroke:#4ba3c7,color:#fff
+    style S fill:#d9635f,stroke:#d9635f,color:#fff
+    style TU fill:#4ba3c7,stroke:#4ba3c7,color:#fff
+    style TI fill:#4ba3c7,stroke:#4ba3c7,color:#fff
+    style P fill:#e8a23b,stroke:#e8a23b,color:#fff
+    style SEC fill:#d9635f,stroke:#d9635f,color:#fff
+    style DEV fill:#3b7d45,stroke:#3b7d45,color:#fff
+    style AP fill:#fff3cd,stroke:#b58105,color:#5c4300
+    style STG fill:#1f2024,stroke:#1f2024,color:#fff
+```
+
+`lint` y `sast` arrancan a la vez. Las dos ramas se juntan en `package`: no se publica ninguna imagen sin pruebas y sin SAST. `package` y `security` son matrices: un job por imagen. DEV y STAGING reciben **la misma imagen** `sha-<commit>` que se construyó y escaneó; nada se reconstruye.
+
+| # | Etapa | Herramienta | Qué revisa | Si falla | Evento |
+|:-:|-------|-------------|------------|----------|--------|
+| 1 | `lint` | ESLint, HTMLHint, Hadolint (contenedor) | Estilo y errores del JavaScript, el HTML de la página y los tres Dockerfiles (umbral `warning`) | Job en rojo; `test-unit` y todo lo que sigue no corren | PR y push a `main` |
+| 2 | `sast` | Semgrep 1.180.0 y Gitleaks v8.30.1 (contenedores) | Patrones inseguros en código, workflows y Dockerfiles (`p/ci`, `p/dockerfile`); secretos en **todo** el historial de Git | Job en rojo; `package` no corre. Gitleaks no imprime el secreto (`--redact`) | PR y push a `main` |
+| 3 | `test-unit` | Vitest y Supertest, jsdom | 11 pruebas de la API con un pool de Postgres falso y 7 de la página estática | Job en rojo, con la lista de pruebas fallidas en el resumen | PR y push a `main` |
+| 4 | `test-integration` | Docker Compose y Vitest (`fetch`) | La aplicación completa dentro del runner, entrando por nginx: 7 pruebas | Job en rojo y se imprimen los logs de los contenedores | PR y push a `main` |
+| 5 | `package` | Docker Buildx, GitHub Packages (GHCR) | Que las tres imágenes construyan (amd64 y arm64) y se publiquen con tag `sha-<commit>` | Job en rojo; no hay imagen que escanear ni desplegar | PR y push a `main` |
+| 6 | `security` | Trivy (`CRITICAL,HIGH`, solo con parche) | Vulnerabilidades de cada imagen publicada; las aceptadas están en [`.trivyignore`](.trivyignore), una por una con su porqué | Job en rojo con la tabla de CVE en el resumen; nada llega a DEV | PR y push a `main` |
+| 7 | `deploy-dev` | kind, kubectl y Kustomize | Despliega en un clúster creado dentro del runner; espera el rollout; smoke test y las 7 pruebas de integración contra Kubernetes | Job en rojo con el diagnóstico de los pods; STAGING no se ofrece | Solo push a `main` |
+| 8 | `deploy-staging` | Runner propio (Windows), kubectl, Rancher Desktop | Con **aprobación manual** (environment `staging`): despliega la misma imagen, espera el rollout y a que se borren los pods viejos, y corre el smoke contra `http://localhost:30080` | Job en rojo; los datos de Postgres siguen en su volumen | Solo push a `main`, después de aprobar |
+
+`main` está protegida: no se puede hacer merge si falla `lint`, `sast`, `test-unit`, `test-integration`, `package` (×3) o `security` (×3). Dependabot propone actualizaciones semanales de acciones, npm e imágenes base, con 7 días de `cooldown`.
+
+### El resumen de cada run
+
+En la página de cada run (pestaña *Summary*), cada job deja su parte, generada por [`scripts/resumen.mjs`](scripts/resumen.mjs):
+- `test-unit` y `test-integration`: total, pasaron, fallaron y los nombres de las que fallaron.
+- `security`: por imagen, cuántas `CRITICAL` y `HIGH` frenan el pipeline y la tabla de CVE (paquete, versión instalada, versión corregida).
+- `deploy-dev`: la imagen desplegada y las pruebas de integración contra Kubernetes.
+- `deploy-staging`: la imagen desplegada y la salida del smoke.
+
+El seguimiento del laboratorio (enlaces a PR y runs, tiempos, decisiones) está en [`PROGRESO.md`](PROGRESO.md).
+
+---
+
+## La aplicación base
+
+Lo que sigue es el README de la plantilla del curso, sin cambios salvo las secciones del laboratorio.
 
 Aquí les dejo una aplicación completa y funcionando: el libro de visitas del LAB-02, ya contenerizado, con pruebas, con manifiestos de Kubernetes y con métricas. Lo que **no** tiene es el pipeline. Eso lo construyen ustedes siguiendo la [guía práctica de la Semana 06](https://github.com/urp-topicos-2026-2/.github-private/blob/main/semanas/S06/guia-pipeline.md), y lo extienden en el [LAB-04](https://github.com/urp-topicos-2026-2/.github-private/blob/main/semanas/S06/laboratorio/lab-04.md).
 

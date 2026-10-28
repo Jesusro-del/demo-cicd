@@ -9,8 +9,8 @@ Fecha límite: 30/10/2026 23:59. Repositorio: https://github.com/Jesusro-del/dem
 | B1 Pipeline de la guía | ✅ Hecho (falta solo tu captura) | #1–#8, #13, #17, #18 | [main ✅ STAGING](https://github.com/Jesusro-del/demo-cicd/actions/runs/40559516916) · [Dependabot ✅ STAGING](https://github.com/Jesusro-del/demo-cicd/actions/runs/40702839413) |
 | B2 Dos herramientas cambiadas | ⬜ Pendiente | | |
 | B3 Cuatro etapas rotas | ✅ Hecho (tabla en el README) | #20–#23 (cerrados sin merge) | 4 rojos y 4 verdes, ver abajo |
-| B4 Endpoint de estadísticas | ⬜ Pendiente | | |
-| B5 README, badge y resumen | ⬜ Pendiente | | |
+| B4 Endpoint de estadísticas | ✅ Hecho (falta tu captura de STAGING con el total) | [#24](https://github.com/Jesusro-del/demo-cicd/pull/24) | [PR ✅](https://github.com/Jesusro-del/demo-cicd/actions/runs/40706486832) · [main ✅ STAGING](https://github.com/Jesusro-del/demo-cicd/actions/runs/40707117726) |
+| B5 README, badge y resumen | 🟡 En PR (falta tu captura del resumen) | | |
 | B6 Pipeline 25 % más rápido | ⬜ Pendiente | | |
 
 ## B1: un PR por paso de la guía
@@ -95,3 +95,17 @@ El "antes" es el primer run completo de `main` en verde, sin contar la espera de
 | deploy-dev | 87 s (kind ~41 s, rollout ~19 s) | |
 | deploy-staging | 17 s (pods ya listos tras el restart; un rollout normal tarda más) | |
 | **Total** | **≈ 4 min 02 s** (3 min 45 s hasta DEV + 17 s) | |
+
+## B4: GET /api/estadisticas
+
+- `api/app.js`: `SELECT COUNT(*)::int AS total FROM mensajes` → `{"total": N}`. Sin el `::int`, `pg` devuelve el `bigint` como texto.
+- La página muestra `· N mensajes` dentro del `<h1>` y lo actualiza al enviar un mensaje.
+- Pruebas nuevas: 2 unitarias (pool falso), 1 de integración (el total sube en 1) y 1 del sitio. Unitarias 9 → 11, integración 6 → 7, sitio 6 → 7.
+- En STAGING (`sha-7681151`): `/api/estadisticas` respondió `{"total":6}`.
+- Se canceló el run del PR #19 que esperaba aprobación: aprobarlo habría desplegado una versión anterior al B4 encima de la nueva. Idea para el B6: `concurrency` en `deploy-staging`.
+
+## B5: README y resumen del run
+
+- README: badge, diagrama Mermaid y tabla de las 8 etapas (herramienta, qué revisa, qué pasa si falla, evento).
+- `scripts/resumen.mjs` convierte el JSON de Vitest y de Trivy en tablas para `$GITHUB_STEP_SUMMARY`. Trivy sigue con `exit-code: "1"`: solo cambió `format: table` por `format: json`.
+- Alternativa descartada: acciones de terceros como `dorny/test-reporter`, que piden `checks: write` y suman otra dependencia que fijar.
