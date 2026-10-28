@@ -1,6 +1,7 @@
 # Pipeline CI/CD de demo-cicd. Semana 06, IF-1116.
 #
 # Un job por etapa, encadenados con needs. Si uno falla, los siguientes no corren.
+# lint, sast, test-unit y test-integration corren en paralelo y se juntan en package (B6).
 # Las acciones van fijadas por SHA (el tag queda como comentario): un tag se puede mover, un SHA no.
 name: CI/CD
 
@@ -72,7 +73,9 @@ jobs:
 
   test-unit:
     name: 3. Pruebas unitarias y del sitio
-    needs: lint                 # lo barato primero: si el lint falla, no se gastan minutos en pruebas
+    # B6: sin needs, corre en paralelo con lint y sast. Antes esperaba al lint ("lo barato primero"):
+    # ahorraba minutos si el lint fallaba, pero alargaba el camino de todos los runs que pasan.
+    # La compuerta no se pierde: package necesita lint, sast y las dos pruebas.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -93,7 +96,7 @@ jobs:
 
   test-integration:
     name: 4. Pruebas de integración (Compose)
-    needs: test-unit
+    # B6: tampoco espera a las unitarias; es el job más largo de esta primera fase y marca su duración.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -119,7 +122,7 @@ jobs:
 
   package:
     name: 5. Empaquetar y publicar (${{ matrix.servicio }})
-    needs: [test-integration, sast]   # aquí se juntan las dos ramas: nada se publica sin pruebas y sin SAST
+    needs: [lint, sast, test-unit, test-integration]   # aquí se juntan las cuatro: nada se publica sin todas en verde
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -131,7 +134,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Nombre de la imagen (GHCR exige minúsculas)
         run: echo "IMAGEN=ghcr.io/$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')/demo-cicd-${{ matrix.servicio }}" >> "$GITHUB_ENV"
-      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
@@ -146,7 +148,10 @@ jobs:
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ./${{ matrix.servicio }}
-          platforms: linux/amd64,linux/arm64
+          # B6: solo amd64. DEV (kind en el runner) y STAGING (Rancher Desktop en mi laptop Windows) son amd64;
+          # arm64 obligaba a emular con QEMU y costaba unos 15 s por imagen. Para una Mac con chip Apple
+          # habría que volver a agregar linux/arm64 y docker/setup-qemu-action.
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -168,6 +173,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Nombre de la imagen
         run: echo "IMAGEN=ghcr.io/$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')/demo-cicd-${{ matrix.servicio }}" >> "$GITHUB_ENV"
+      # B6: la base de vulnerabilidades de Grype pesa cientos de MB y descargarla era el 90 % del job.
+      # Se guarda en caché con una clave por día: el primer escaneo del día la baja, los demás la reusan.
+      # Grype igual comprueba si hay una más nueva y nunca usa una de más de 5 días.
+      - name: Fecha para la clave de la caché
+        id: fecha
+        run: echo "hoy=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+      - name: Caché de la base de Grype
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .grype-db
+          key: grype-db-${{ steps.fecha.outputs.hoy }}
+          restore-keys: grype-db-
       # Grype en vez de Trivy (B2). Mismo criterio: HIGH y CRITICAL frenan, solo las que tienen parche.
       # --fail-on high: sale con error si hay alguna de severidad high o mayor.
       # --only-fixed: sin parche no hay acción posible hoy (lo que Trivy llamaba ignore-unfixed).
@@ -181,6 +198,7 @@ jobs:
         run: >
           docker run --rm -v "$PWD:/trabajo" -w /trabajo
           -e GRYPE_REGISTRY_AUTH_AUTHORITY -e GRYPE_REGISTRY_AUTH_USERNAME -e GRYPE_REGISTRY_AUTH_PASSWORD
+          -e GRYPE_DB_CACHE_DIR=/trabajo/.grype-db
           anchore/grype:v0.121.0
           "registry:$IMAGEN:sha-${{ github.sha }}"
           --fail-on high --only-fixed --config .grype.yaml
@@ -188,6 +206,11 @@ jobs:
       - name: Resumen del escaneo
         if: ${{ !cancelled() }}
         run: node scripts/resumen.mjs grype grype.json "demo-cicd-${{ matrix.servicio }}"
+      # Grype corre como root dentro del contenedor: los archivos de la base quedan de root.
+      # Se devuelven al usuario del runner para que actions/cache pueda guardarlos al terminar el job.
+      - name: Permisos de la base para la caché
+        if: ${{ !cancelled() }}
+        run: sudo chown -R "$(id -u):$(id -g)" .grype-db || true
 
   deploy-dev:
     name: 7. Deploy DEV (efímero) y smoke
@@ -245,7 +268,15 @@ jobs:
   deploy-staging:
     name: 8. Deploy STAGING (con aprobación)
     needs: deploy-dev
-    if: github.event_name != 'pull_request'
+    # Solo desde main. Con la condición de la guía (!= pull_request), un workflow_dispatch desde cualquier rama
+    # llegaba hasta la aprobación de STAGING: pasó tres veces en el laboratorio.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    # Un solo despliegue a STAGING a la vez. Si llega uno nuevo mientras otro espera la aprobación, el que esperaba
+    # se cancela: aprobarlo después desplegaría una versión vieja encima de la nueva (pasó con el run del PR #19).
+    # cancel-in-progress: false para no cortar un despliegue que ya está aplicando cambios en el clúster.
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
     runs-on: self-hosted                      # el runner de mi laptop, donde kubectl apunta a Rancher Desktop
     environment:
       name: staging                           # con Required reviewers: el job espera la aprobación
