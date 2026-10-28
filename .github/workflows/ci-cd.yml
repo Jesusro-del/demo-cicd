@@ -319,12 +319,14 @@ jobs:
     # Solo desde main. Con la condición de la guía (!= pull_request), un workflow_dispatch desde cualquier rama
     # llegaba hasta la aprobación de STAGING: pasó tres veces en el laboratorio.
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    # Un solo despliegue a STAGING a la vez. Si llega uno nuevo mientras otro espera la aprobación, el que esperaba
-    # se cancela: aprobarlo después desplegaría una versión vieja encima de la nueva (pasó con el run del PR #19).
-    # cancel-in-progress: false para no cortar un despliegue que ya está aplicando cambios en el clúster.
+    # Un solo despliegue a STAGING a la vez, y gana el más nuevo: si llega uno mientras otro espera la aprobación,
+    # el que esperaba se cancela. Aprobarlo después desplegaría una versión vieja encima de la nueva (run del PR #19).
+    # cancel-in-progress: true porque un job que espera la aprobación ya ocupa el grupo: con false, el nuevo quedaba
+    # en cola detrás del viejo (runs 40727836457 y 40731484066). El precio: si llega otro despliegue justo mientras
+    # uno aplica cambios, ese se corta; el siguiente lo completa, porque kubectl apply es idempotente.
     concurrency:
       group: deploy-staging
-      cancel-in-progress: false
+      cancel-in-progress: true
     runs-on: self-hosted                      # el runner de mi laptop, donde kubectl apunta a Rancher Desktop
     environment:
       name: staging                           # con Required reviewers: el job espera la aprobación
