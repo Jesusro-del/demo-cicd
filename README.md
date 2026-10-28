@@ -14,7 +14,7 @@ flowchart LR
     S["2 sast"] --> P
     TU["3 test-unit"] --> P
     TI["4 test-integration"] --> P
-    P --> SEC["6 security<br/>web · api · db"] --> DEV["7 deploy-dev<br/>k3d, efímero"] --> AP{"aprobación"} --> STG["8 deploy-staging<br/>Rancher Desktop"]
+    P --> SEC["6 security<br/>web · api · db"] --> DEV["7 deploy-dev<br/>k3d, efímero"] --> AP{"aprobación"} --> STG["8 deploy-staging<br/>publica gitops/staging"] --> ARGO(["Argo CD<br/>sincroniza STAGING"]) --> VS["9 verify-staging<br/>runner propio, smoke"]
     style L fill:#4ba3c7,stroke:#4ba3c7,color:#fff
     style S fill:#d9635f,stroke:#d9635f,color:#fff
     style TU fill:#4ba3c7,stroke:#4ba3c7,color:#fff
@@ -24,6 +24,8 @@ flowchart LR
     style DEV fill:#3b7d45,stroke:#3b7d45,color:#fff
     style AP fill:#fff3cd,stroke:#b58105,color:#5c4300
     style STG fill:#1f2024,stroke:#1f2024,color:#fff
+    style ARGO fill:#ef7b4d,stroke:#ef7b4d,color:#fff
+    style VS fill:#3b7d45,stroke:#3b7d45,color:#fff
 ```
 
 `lint`, `sast`, `test-unit` y `test-integration` arrancan a la vez y se juntan en `package`: no se publica ninguna imagen sin las cuatro en verde. `package` y `security` son matrices: un job por imagen. DEV y STAGING reciben **la misma imagen** `sha-<commit>` que se construyó y escaneó; nada se reconstruye.
@@ -37,7 +39,8 @@ flowchart LR
 | 5 | `package` | Docker Buildx, GitHub Packages (GHCR) | Que las tres imágenes construyan (amd64 y arm64) y se publiquen con tag `sha-<commit>` | Job en rojo; no hay imagen que escanear ni desplegar | PR y push a `main` |
 | 6 | `security` | Grype v0.121.0 (contenedor; `--fail-on high`, solo con parche) | Vulnerabilidades de cada imagen publicada; las aceptadas están en [`.grype.yaml`](.grype.yaml), una por una con su porqué y acotadas al binario | Job en rojo con la tabla de vulnerabilidades en el resumen; nada llega a DEV | PR y push a `main` |
 | 7 | `deploy-dev` | k3d (k3s v1.36.4), kubectl, Kustomize y OWASP ZAP | Despliega en un clúster creado dentro del runner; espera el rollout; smoke test, las 7 pruebas de integración y un baseline scan de ZAP contra Kubernetes |
-| 8 | `deploy-staging` | Runner propio (Windows), kubectl, Rancher Desktop | Con **aprobación manual** (environment `staging`): despliega la misma imagen, espera el rollout y a que se borren los pods viejos, y corre el smoke contra `http://localhost:30080` | Job en rojo; los datos de Postgres siguen en su volumen | Solo push a `main` (o `workflow_dispatch` sobre `main`), después de aprobar. Si llega un despliegue más nuevo, el anterior se cancela (`concurrency`) |
+| 8 | `deploy-staging` | git y sed (en `ubuntu-latest`) | Con **aprobación manual** (environment `staging`): escribe la misma imagen `sha-<commit>` en `k8s/overlays/staging` y publica la rama `gitops/staging`. No toca el clúster: lo aplica Argo CD (GitOps) | Job en rojo; STAGING sigue como estaba | Solo push a `main` (o `workflow_dispatch` sobre `main`), después de aprobar. Si llega un despliegue más nuevo, el anterior se cancela (`concurrency`) |
+| 9 | `verify-staging` | Runner propio (Windows), kubectl, Argo CD | Espera a que Argo CD aplique las imágenes nuevas, a que terminen los rollouts y a que se borren los pods viejos; corre el smoke contra `http://localhost:30080` | Job en rojo con el estado de la `Application` de Argo CD | Después de `deploy-staging` |
 
 `main` está protegida: no se puede hacer merge si falla `lint`, `sast`, `test-unit`, `test-integration`, `package` (×3) o `security` (×3). Dependabot propone actualizaciones semanales de acciones, npm e imágenes base, con 7 días de `cooldown`.
 

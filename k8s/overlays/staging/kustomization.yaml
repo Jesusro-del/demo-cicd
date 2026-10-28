@@ -13,3 +13,17 @@ labels:
 patches:
   - path: web-nodeport.yaml
   - path: api-replicas.yaml
+
+# Reto 4 (GitOps): qué imagen corre en STAGING está escrito aquí, en Git. Argo CD lo lee y lo aplica.
+# En main, estos tags son solo el punto de partida. Lo que corre en STAGING está en la rama gitops/staging:
+# deploy-staging cambia estos tres newTag (con sed) y publica esa rama; Argo CD la aplica.
+images:
+  - name: demo-cicd-web
+    newName: ghcr.io/jesusro-del/demo-cicd-web
+    newTag: sha-1c9b424d5c0fedc7640ded9df544ad733e1c1299
+  - name: demo-cicd-api
+    newName: ghcr.io/jesusro-del/demo-cicd-api
+    newTag: sha-1c9b424d5c0fedc7640ded9df544ad733e1c1299
+  - name: demo-cicd-db
+    newName: ghcr.io/jesusro-del/demo-cicd-db
+    newTag: sha-1c9b424d5c0fedc7640ded9df544ad733e1c1299

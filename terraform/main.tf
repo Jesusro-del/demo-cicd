@@ -40,6 +40,10 @@ resource "github_repository_ruleset" "main" {
     }
   }
 
+  # Sin bypass_actors. Para el Reto 4 intenté dejar pasar a la app GitHub Actions (actor_id 15368) y GitHub respondió
+  # "Actor GitHub Actions integration must be part of the ruleset source or owner organization": en un repositorio
+  # de cuenta personal no se puede. Por eso deploy-staging escribe en la rama gitops/staging y no en main.
+
   rules {
     deletion         = true
     non_fast_forward = true
