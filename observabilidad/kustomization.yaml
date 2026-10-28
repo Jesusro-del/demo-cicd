@@ -1,0 +1,25 @@
+# Reto 3: Prometheus y Grafana en el clúster, observando STAGING. Lo aplica Argo CD (k8s/argocd/observabilidad.yaml).
+# Reusa el dashboard RED y el datasource que ya usaba Compose: el mismo archivo sirve en los dos lugares.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: observabilidad
+resources:
+  - k8s/namespace.yaml
+  - k8s/prometheus.yaml
+  - k8s/grafana.yaml
+
+# Cada ConfigMap lleva un sufijo con el hash de su contenido: si cambia una regla o el dashboard, el nombre cambia
+# y el Deployment se reinicia solo con la versión nueva.
+configMapGenerator:
+  - name: prometheus-config
+    files:
+      - prometheus.yml=k8s/prometheus.yml   # en Kubernetes descubre los pods; el de Compose usa targets fijos
+      - alertas.yml=k8s/alertas.yml
+  - name: grafana-datasources
+    files:
+      - grafana/provisioning/datasources/prometheus.yml
+  - name: grafana-dashboards
+    files:
+      - grafana/provisioning/dashboards/dashboards.yml
+      - grafana/provisioning/dashboards/libro-de-visitas.json

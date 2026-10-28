@@ -1,0 +1,18 @@
+# La alerta del Reto 3: más del 5 % de las respuestas de la API son 5xx durante un minuto seguido.
+groups:
+  - name: libro-de-visitas
+    rules:
+      - alert: TasaDeErrores5xxAlta
+        # Errores sobre total en el último minuto. http_request_duration_seconds_count es el contador de peticiones
+        # que la API ya expone (por método, ruta y código). Sin tráfico el cociente no existe y la alerta no salta.
+        expr: |
+          sum(rate(http_request_duration_seconds_count{job="api-staging", status=~"5.."}[1m]))
+            /
+          sum(rate(http_request_duration_seconds_count{job="api-staging"}[1m]))
+            > 0.05
+        for: 1m        # tiene que mantenerse un minuto: un error suelto no despierta a nadie
+        labels:
+          severity: warning
+        annotations:
+          summary: "STAGING: {{ $value | humanizePercentage }} de las respuestas de la API son 5xx"
+          description: "Más del 5 % de las peticiones a la API fallan con 5xx desde hace al menos un minuto. Revisar /api/health y los logs de api y db en demo-staging."

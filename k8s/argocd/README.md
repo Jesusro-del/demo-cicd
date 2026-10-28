@@ -41,6 +41,25 @@ kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.pas
 
 Usuario `admin`, en https://localhost:8443 (certificado autofirmado). La contraseña inicial solo vive en el clúster.
 
+## Observabilidad (Reto 3)
+
+Prometheus y Grafana viven en el namespace `observabilidad`. Los administra una segunda `Application`, que sigue la carpeta `observabilidad/` en `main`. Antes de crearla hay que hacer el Secret de Grafana, que no está en Git (en Git Bash, porque PowerShell no tiene `openssl`):
+
+```bash
+kubectl create namespace observabilidad
+kubectl -n observabilidad create secret generic grafana-admin \
+  --from-literal=usuario=admin --from-literal=contrasena="$(openssl rand -base64 18)"
+kubectl apply -n argocd -f k8s/argocd/observabilidad.yaml
+```
+
+Para entrar:
+
+```bash
+kubectl -n observabilidad port-forward svc/grafana 3001:3000      # http://localhost:3001
+kubectl -n observabilidad port-forward svc/prometheus 9090:9090   # http://localhost:9090/alerts
+kubectl -n observabilidad get secret grafana-admin -o jsonpath='{.data.contrasena}' | base64 -d
+```
+
 ## Qué no administra Argo CD
 
-El Secret `db-credenciales` se creó a mano y no está en Git. Argo CD no lo borra, porque `prune` solo afecta a lo que Argo CD creó a partir de Git.
+Los Secrets `db-credenciales` (en `demo-staging`) y `grafana-admin` (en `observabilidad`) se crearon a mano y no están en Git. Argo CD no lo borra, porque `prune` solo afecta a lo que Argo CD creó a partir de Git.

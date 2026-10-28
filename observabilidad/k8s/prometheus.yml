@@ -1,0 +1,40 @@
+# Prometheus en Kubernetes: en vez de una dirección fija (como en Compose), pregunta a Kubernetes qué pods hay en
+# demo-staging y se queda con los que tienen la anotación prometheus.io/scrape: "true" (hoy, las réplicas de api).
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s   # cada cuánto se evalúan las reglas de alerta
+
+rule_files:
+  - /etc/prometheus/alertas.yml
+
+scrape_configs:
+  - job_name: api-staging
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: [demo-staging]
+    relabel_configs:
+      # Solo los pods anotados con prometheus.io/scrape: "true".
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: "true"
+      # IP del pod + el puerto de prometheus.io/port.
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+      # La ruta de prometheus.io/path (/metrics).
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        regex: (.+)
+        target_label: __metrics_path__
+      # Para saber de qué réplica viene cada serie.
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
