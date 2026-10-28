@@ -3,6 +3,7 @@
 // Uso:
 //   node scripts/resumen.mjs pruebas <vitest.json> "<título>"
 //   node scripts/resumen.mjs trivy <trivy.json> "<imagen>"
+//   node scripts/resumen.mjs grype <grype.json> "<imagen>"
 // Si el JSON no existe (el paso anterior ni llegó a correr), lo dice en vez de fallar:
 // el job ya está en rojo por su propio paso, el resumen solo informa.
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
@@ -49,7 +50,26 @@ if (tipo === "pruebas") {
     }
   }
   escribir(md);
+} else if (tipo === "grype") {
+  // Con --only-fixed, matches trae solo lo que tiene parche; las aceptadas en .grype.yaml van aparte,
+  // en ignoredMatches. Grype escribe la severidad con mayúscula inicial ("High").
+  const vulns = (datos.matches ?? []).map((m) => ({
+    sev: m.vulnerability.severity, id: m.vulnerability.id,
+    pkg: m.artifact.name, version: m.artifact.version, fix: (m.vulnerability.fix?.versions ?? []).join(", "),
+  }));
+  const frenan = vulns.filter((v) => v.sev === "Critical" || v.sev === "High");
+  const cuenta = (sev) => vulns.filter((v) => v.sev === sev).length;
+  const icono = frenan.length === 0 ? "✅" : "❌";
+  let md = `### ${icono} Grype: ${titulo}\n\n`;
+  md += "Con parche disponible. Frenan `Critical` y `High`; las aceptadas en `.grype.yaml` no se cuentan.\n\n";
+  md += "| Critical | High | Medium | Low | Aceptadas |\n|:-:|:-:|:-:|:-:|:-:|\n";
+  md += `| ${cuenta("Critical")} | ${cuenta("High")} | ${cuenta("Medium")} | ${cuenta("Low")} | ${(datos.ignoredMatches ?? []).length} |\n`;
+  if (frenan.length) {
+    md += "\n| Severidad | Vulnerabilidad | Paquete | Instalada | Corregida en |\n|---|---|---|---|---|\n";
+    for (const v of frenan) md += `| ${v.sev} | ${celda(v.id)} | ${celda(v.pkg)} | ${celda(v.version)} | ${celda(v.fix)} |\n`;
+  }
+  escribir(md);
 } else {
-  console.error(`Tipo desconocido: ${tipo}. Usa "pruebas" o "trivy".`);
+  console.error(`Tipo desconocido: ${tipo}. Usa "pruebas", "trivy" o "grype".`);
   process.exit(2);
 }

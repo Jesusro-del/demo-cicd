@@ -1,0 +1,123 @@
+# Vulnerabilidades aceptadas por Grype, con el porqué. Cada entrada es una decisión documentada, no un atajo.
+# Antes vivían en .trivyignore (Trivy se cambió por Grype en el B2 del LAB-04).
+#
+# Todas están en gosu (/usr/local/bin/gosu en demo-cicd-db), el binario Go que trae la imagen oficial
+# postgres:16-alpine. Son de la librería estándar de Go con la que se compiló gosu.
+#
+# Por qué no son explotables aquí: el entrypoint de Postgres ejecuta gosu una sola vez, al arrancar, para hacer
+# setuid/setgid al usuario postgres y reemplazarse con exec por el proceso de Postgres. gosu no abre sockets ni
+# escucha en ningún puerto, no hace peticiones HTTP, no parsea URLs, correos, MIME, XML ni plantillas HTML, no
+# valida certificados ni usa TLS, y no recibe datos de la red: sus únicos argumentos los escribe el entrypoint.
+# El código vulnerable está enlazado en el binario pero nunca se ejecuta.
+#
+# Por qué no se corrigen: gosu es un binario estático de la imagen oficial; apk upgrade no lo toca. La
+# corrección es que la imagen oficial lo recompile con un Go nuevo. Aceptadas el 09/10 (CVE-2025-68121) y el
+# 27/10/2026 (las demás). Se revisan cuando Dependabot proponga una imagen de Postgres nueva.
+#
+# A diferencia de .trivyignore, cada regla está acotada al binario: si el mismo CVE apareciera en otro paquete,
+# Grype lo frenaría. Grype no tiene fecha de caducidad para las reglas (Trivy sí: exp:).
+ignore:
+  # crypto/tls (validación de certificados al reanudar sesiones TLS)
+  - vulnerability: CVE-2025-68121
+    package:
+      location: /usr/local/bin/gosu
+  # net/url
+  - vulnerability: CVE-2025-61726
+    package:
+      location: /usr/local/bin/gosu
+  # crypto/x509
+  - vulnerability: CVE-2025-61729
+    package:
+      location: /usr/local/bin/gosu
+  # net/url
+  - vulnerability: CVE-2026-25679
+    package:
+      location: /usr/local/bin/gosu
+  # crypto/x509
+  - vulnerability: CVE-2026-27145
+    package:
+      location: /usr/local/bin/gosu
+  # crypto/x509, crypto/tls
+  - vulnerability: CVE-2026-32280
+    package:
+      location: /usr/local/bin/gosu
+  # crypto/x509
+  - vulnerability: CVE-2026-32281
+    package:
+      location: /usr/local/bin/gosu
+  # crypto/tls
+  - vulnerability: CVE-2026-32283
+    package:
+      location: /usr/local/bin/gosu
+  # net
+  - vulnerability: CVE-2026-33811
+    package:
+      location: /usr/local/bin/gosu
+  # net/http (HTTP/2)
+  - vulnerability: CVE-2026-33814
+    package:
+      location: /usr/local/bin/gosu
+  # encoding/asn1
+  - vulnerability: CVE-2026-33818
+    package:
+      location: /usr/local/bin/gosu
+  # net/mail
+  - vulnerability: CVE-2026-39820
+    package:
+      location: /usr/local/bin/gosu
+  # net/http (idna)
+  - vulnerability: CVE-2026-39821
+    package:
+      location: /usr/local/bin/gosu
+  # os.Root (gosu no lo usa: cambia de usuario con syscalls, no abre archivos por ruta)
+  - vulnerability: CVE-2026-39822
+    package:
+      location: /usr/local/bin/gosu
+  # net
+  - vulnerability: CVE-2026-39836
+    package:
+      location: /usr/local/bin/gosu
+  # net/mail
+  - vulnerability: CVE-2026-42499
+    package:
+      location: /usr/local/bin/gosu
+  # mime
+  - vulnerability: CVE-2026-42504
+    package:
+      location: /usr/local/bin/gosu
+  # net/http
+  - vulnerability: CVE-2026-56853
+    package:
+      location: /usr/local/bin/gosu
+  # html/template
+  - vulnerability: CVE-2026-56858
+    package:
+      location: /usr/local/bin/gosu
+  # encoding/xml
+  - vulnerability: CVE-2026-56859
+    package:
+      location: /usr/local/bin/gosu
+  # net/url
+  - vulnerability: CVE-2026-56860
+    package:
+      location: /usr/local/bin/gosu
+  # crypto/tls
+  - vulnerability: CVE-2026-56862
+    package:
+      location: /usr/local/bin/gosu
+  # net/http
+  - vulnerability: CVE-2026-78667
+    package:
+      location: /usr/local/bin/gosu
+  # net/http (HTTP/2)
+  - vulnerability: CVE-2026-78669
+    package:
+      location: /usr/local/bin/gosu
+  # crypto/tls
+  - vulnerability: CVE-2026-97031
+    package:
+      location: /usr/local/bin/gosu
+  # crypto/x509
+  - vulnerability: CVE-2026-111943
+    package:
+      location: /usr/local/bin/gosu

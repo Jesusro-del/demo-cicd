@@ -29,11 +29,11 @@ flowchart LR
 | # | Etapa | Herramienta | Qué revisa | Si falla | Evento |
 |:-:|-------|-------------|------------|----------|--------|
 | 1 | `lint` | ESLint, HTMLHint, Hadolint (contenedor) | Estilo y errores del JavaScript, el HTML de la página y los tres Dockerfiles (umbral `warning`) | Job en rojo; `test-unit` y todo lo que sigue no corren | PR y push a `main` |
-| 2 | `sast` | Semgrep 1.180.0 y Gitleaks v8.30.1 (contenedores) | Patrones inseguros en código, workflows y Dockerfiles (`p/ci`, `p/dockerfile`); secretos en **todo** el historial de Git | Job en rojo; `package` no corre. Gitleaks no imprime el secreto (`--redact`) | PR y push a `main` |
+| 2 | `sast` | Semgrep 1.180.0 y TruffleHog 3.99.3 (contenedores) | Patrones inseguros en código, workflows y Dockerfiles (`p/ci`, `p/dockerfile`); secretos verificados y no verificados en **todo** el historial de Git | Job en rojo; `package` no corre. El log muestra detector, archivo y commit, nunca el valor del secreto | PR y push a `main` |
 | 3 | `test-unit` | Vitest y Supertest, jsdom | 11 pruebas de la API con un pool de Postgres falso y 7 de la página estática | Job en rojo, con la lista de pruebas fallidas en el resumen | PR y push a `main` |
 | 4 | `test-integration` | Docker Compose y Vitest (`fetch`) | La aplicación completa dentro del runner, entrando por nginx: 7 pruebas | Job en rojo y se imprimen los logs de los contenedores | PR y push a `main` |
 | 5 | `package` | Docker Buildx, GitHub Packages (GHCR) | Que las tres imágenes construyan (amd64 y arm64) y se publiquen con tag `sha-<commit>` | Job en rojo; no hay imagen que escanear ni desplegar | PR y push a `main` |
-| 6 | `security` | Trivy (`CRITICAL,HIGH`, solo con parche) | Vulnerabilidades de cada imagen publicada; las aceptadas están en [`.trivyignore`](.trivyignore), una por una con su porqué | Job en rojo con la tabla de CVE en el resumen; nada llega a DEV | PR y push a `main` |
+| 6 | `security` | Grype v0.121.0 (contenedor; `--fail-on high`, solo con parche) | Vulnerabilidades de cada imagen publicada; las aceptadas están en [`.grype.yaml`](.grype.yaml), una por una con su porqué y acotadas al binario | Job en rojo con la tabla de vulnerabilidades en el resumen; nada llega a DEV | PR y push a `main` |
 | 7 | `deploy-dev` | kind, kubectl y Kustomize | Despliega en un clúster creado dentro del runner; espera el rollout; smoke test y las 7 pruebas de integración contra Kubernetes | Job en rojo con el diagnóstico de los pods; STAGING no se ofrece | Solo push a `main` |
 | 8 | `deploy-staging` | Runner propio (Windows), kubectl, Rancher Desktop | Con **aprobación manual** (environment `staging`): despliega la misma imagen, espera el rollout y a que se borren los pods viejos, y corre el smoke contra `http://localhost:30080` | Job en rojo; los datos de Postgres siguen en su volumen | Solo push a `main`, después de aprobar |
 
@@ -43,7 +43,7 @@ flowchart LR
 
 En la página de cada run (pestaña *Summary*), cada job deja su parte, generada por [`scripts/resumen.mjs`](scripts/resumen.mjs):
 - `test-unit` y `test-integration`: total, pasaron, fallaron y los nombres de las que fallaron.
-- `security`: por imagen, cuántas `CRITICAL` y `HIGH` frenan el pipeline y la tabla de CVE (paquete, versión instalada, versión corregida).
+- `security`: por imagen, cuántas vulnerabilidades con parche hay por severidad (`Critical` y `High` frenan), cuántas están aceptadas y la tabla de las que frenan (paquete, versión instalada, versión corregida).
 - `deploy-dev`: la imagen desplegada y las pruebas de integración contra Kubernetes.
 - `deploy-staging`: la imagen desplegada y la salida del smoke.
 
@@ -162,7 +162,7 @@ Cuatro etapas rotas, cada una en su rama y su PR. Cada PR tiene dos commits: la 
 | `test-integration` | `proxy_pass http://api:3001` en `nginx.conf` · [#22](https://github.com/Jesusro-del/demo-cicd/pull/22) | 4 de 6 pruebas: `expected 502 to be 200` | [40704490155](https://github.com/Jesusro-del/demo-cicd/actions/runs/40704490155) | [40705113679](https://github.com/Jesusro-del/demo-cicd/actions/runs/40705113679) | **1:26** |
 | `security` | `FROM node:16-alpine` en `api/Dockerfile` · [#23](https://github.com/Jesusro-del/demo-cicd/pull/23) | Trivy en `api`: Alpine 3.18.3, 6 HIGH con parche | [40704495856](https://github.com/Jesusro-del/demo-cicd/actions/runs/40704495856) | [40705116777](https://github.com/Jesusro-del/demo-cicd/actions/runs/40705116777) | **2:48** |
 
-Lo que muestra la última columna: un error de sintaxis o de configuración se detecta en menos de medio minuto, sin construir nada. El de `nginx.conf` pasa el lint y las unitarias, y solo lo ve la prueba que levanta la aplicación completa, en el minuto 1:26. El de la imagen base pasa todas las pruebas, porque la aplicación funciona igual en Node 16: solo lo frena Trivy, después de construir y publicar las tres imágenes, casi en el minuto 3. Cuanto más tarde se detecta, más minutos de pipeline se gastan antes de enterarse; y si no hubiera escaneo, ese error habría llegado a STAGING.
+Lo que muestra la última columna: un error de sintaxis o de configuración se detecta en menos de medio minuto, sin construir nada. El de `nginx.conf` pasa el lint y las unitarias, y solo lo ve la prueba que levanta la aplicación completa, en el minuto 1:26. El de la imagen base pasa todas las pruebas, porque la aplicación funciona igual en Node 16: solo lo frenó Trivy (hoy Grype), después de construir y publicar las tres imágenes, casi en el minuto 3. Cuanto más tarde se detecta, más minutos de pipeline se gastan antes de enterarse; y si no hubiera escaneo, ese error habría llegado a STAGING.
 
 En cada caso se pone en rojo solo la etapa rota: lo que depende de ella queda *skipped* y la rama paralela sigue en verde (por ejemplo, con `sast` en rojo, `lint`, `test-unit` y `test-integration` pasan y `package` no corre).
 

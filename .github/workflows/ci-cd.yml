@@ -40,20 +40,28 @@ jobs:
 
   # Sin needs: corre en paralelo con lint.
   sast:
-    name: 2. SAST (Semgrep) y secretos (Gitleaks)
+    name: 2. SAST (Semgrep) y secretos (TruffleHog)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0        # Gitleaks revisa todo el historial, no solo el último commit
+          fetch-depth: 0        # TruffleHog revisa todo el historial, no solo el último commit
       - name: Semgrep, análisis estático del código
         run: >
           docker run --rm -v "$PWD:/src:ro" semgrep/semgrep:1.180.0
           semgrep scan --config p/ci --config p/dockerfile --error --metrics=off /src
-      - name: Gitleaks, secretos en el historial de Git
-        run: >
-          docker run --rm -v "$PWD:/repo:ro" --entrypoint sh ghcr.io/gitleaks/gitleaks:v8.30.1
-          -c "git config --global --add safe.directory /repo && gitleaks git /repo --redact -v --exit-code 1"
+      # TruffleHog en vez de Gitleaks (B2).
+      # --fail: sale con error si encuentra algo. --results: también los no verificados, porque un token
+      #   de un servicio sin API de verificación también es un secreto. --no-update: la versión fija manda.
+      # --user: el repo montado es del usuario del runner; así git no se niega a leerlo (dubious ownership).
+      # TruffleHog no tiene --redact: jq deja solo dónde está y de qué tipo es, nunca el valor.
+      #   El log de Actions es público. Con pipefail (bash de Actions), si TruffleHog falla, el paso falla.
+      - name: TruffleHog, secretos en el historial de Git
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo:ro" trufflesecurity/trufflehog:3.99.3 \
+            git file:///repo --fail --no-update --json --results=verified,unverified,unknown \
+            | jq -c '{detector: .DetectorName, verificado: .Verified, archivo: .SourceMetadata.Data.Git.file,
+                      linea: .SourceMetadata.Data.Git.line, commit: .SourceMetadata.Data.Git.commit}'
 
   test-unit:
     name: 3. Pruebas unitarias y del sitio
@@ -153,21 +161,26 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Nombre de la imagen
         run: echo "IMAGEN=ghcr.io/$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')/demo-cicd-${{ matrix.servicio }}" >> "$GITHUB_ENV"
-      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+      # Grype en vez de Trivy (B2). Mismo criterio: HIGH y CRITICAL frenan, solo las que tienen parche.
+      # --fail-on high: sale con error si hay alguna de severidad high o mayor.
+      # --only-fixed: sin parche no hay acción posible hoy (lo que Trivy llamaba ignore-unfixed).
+      # .grype.yaml: las aceptadas, una por una, acotadas al binario donde están.
+      # Las credenciales entran como variables del contenedor (-e sin valor), nunca en la línea de comandos.
+      - name: Grype, vulnerabilidades de la imagen
         env:
-          TRIVY_USERNAME: ${{ github.actor }}
-          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          image-ref: ${{ env.IMAGEN }}:sha-${{ github.sha }}
-          severity: CRITICAL,HIGH       # la regla del curso
-          ignore-unfixed: true          # sin parche no hay acción posible hoy: se reporta, no frena
-          exit-code: "1"                # sigue frenando igual: solo cambia el formato de la salida
-          format: json                  # para el resumen; el siguiente paso imprime la tabla en el log
-          output: trivy.json
-          trivyignores: .trivyignore    # aceptadas una por una, con su porqué
+          GRYPE_REGISTRY_AUTH_AUTHORITY: ghcr.io
+          GRYPE_REGISTRY_AUTH_USERNAME: ${{ github.actor }}
+          GRYPE_REGISTRY_AUTH_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          docker run --rm -v "$PWD:/trabajo" -w /trabajo
+          -e GRYPE_REGISTRY_AUTH_AUTHORITY -e GRYPE_REGISTRY_AUTH_USERNAME -e GRYPE_REGISTRY_AUTH_PASSWORD
+          anchore/grype:v0.121.0
+          "registry:$IMAGEN:sha-${{ github.sha }}"
+          --fail-on high --only-fixed --config .grype.yaml
+          -o table -o json=grype.json
       - name: Resumen del escaneo
         if: ${{ !cancelled() }}
-        run: node scripts/resumen.mjs trivy trivy.json "demo-cicd-${{ matrix.servicio }}"
+        run: node scripts/resumen.mjs grype grype.json "demo-cicd-${{ matrix.servicio }}"
 
   deploy-dev:
     name: 7. Deploy DEV (efímero) y smoke
