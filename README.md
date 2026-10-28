@@ -275,6 +275,29 @@ En los dos, STAGING no tenía nada que actualizar (en el "antes", los pods ya es
 - **Cómo lo verifiqué:** `terraform init`, `fmt -check` y `validate` sin errores. `terraform plan` contra el repositorio real dio `Plan: 3 to import, 0 to add, 0 to change, 0 to destroy`, a la primera, porque escribí cada campo a partir de lo que devuelve `gh api` (ruleset y ambientes). PR: [#31](https://github.com/Jesusro-del/demo-cicd/pull/31).
 - **Qué no me funcionó:** nada en el `plan`. Lo que sí aprendí: el ruleset exige los checks **por nombre**, y en el B2 renombrar un job dejó `main` bloqueada. Ahora la lista de checks está en `variables.tf`: cambiar un nombre es un PR que toca el workflow y Terraform a la vez.
 
+### Reto 4: GitOps con Argo CD
+
+- **Decisión:** Argo CD v3.5.5 en Rancher Desktop, con una `Application` ([`k8s/argocd/staging.yaml`](k8s/argocd/staging.yaml)) que sigue `k8s/overlays/staging` en la rama **`gitops/staging`**, con sincronización automática, `prune` y `selfHeal`. `deploy-staging` ya no hace `kubectl apply`. Después de la aprobación, en `ubuntu-latest`, toma el commit del run, cambia con `sed` los tres `newTag` del overlay y publica `gitops/staging` con `GITHUB_TOKEN`. Un job nuevo, `verify-staging`, corre en el runner propio y solo **lee** el clúster: espera a que Argo CD aplique las imágenes y corre el smoke.
+- **Alternativas que evalué:**
+  - *Commit directo a `main` con una excepción del ruleset para la app GitHub Actions*: era lo que sugiere el enunciado y lo que intenté primero. GitHub lo rechaza en un repositorio de cuenta personal (*Actor GitHub Actions integration must be part of the ruleset source or owner organization*): solo se puede en organizaciones.
+  - *Deploy key con escritura como excepción del ruleset*: sí funcionaría en `main`, pero es una credencial de larga duración en GitHub Secrets, lo que la regla 6 del curso pide evitar.
+  - *PR automático con el tag nuevo*: los PR creados con `GITHUB_TOKEN` no disparan workflows, así que sus checks nunca corren y el ruleset no los deja mezclar.
+  - *Un repositorio de configuración aparte*: es lo más común en GitOps, pero escribir en otro repositorio exige un token o una deploy key.
+  - *`kustomize edit set image` en vez de `sed`*: es lo idiomático, pero exige otro binario (con su versión y su checksum) y reescribe el archivo entero, perdiendo los comentarios.
+- **Por qué elegí esta:** la rama aparte no necesita ninguna credencial nueva ni relaja la protección de `main`. Además, `gitops/staging` siempre es "un commit de `main` más el tag de ese commit": manifiestos e imágenes de STAGING salen del mismo commit.
+- **Fuentes consultadas:**
+  - [Instalación de Argo CD](https://argo-cd.readthedocs.io/en/stable/getting_started/) y [sincronización automática, *self-heal* y *prune*](https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/).
+  - [Bypass en rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository#granting-bypass-permissions-for-your-branch-or-tag-ruleset).
+  - [Eventos que dispara `GITHUB_TOKEN`](https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication#using-the-github_token-in-a-workflow): no dispara runs nuevos, por eso no hay bucle.
+- **Cómo lo verifiqué:**
+  - Al crear la `Application`, Argo CD quedó en `Synced` y `Healthy` **sin reiniciar ningún pod**: el overlay ya coincidía con el clúster (`kubectl diff` sin diferencias).
+  - Primer despliegue GitOps, run [40743163411](https://github.com/Jesusro-del/demo-cicd/actions/runs/40743163411): `deploy-staging` (17 s, en `ubuntu-latest`) publicó el commit [`0d0a17d`](https://github.com/Jesusro-del/demo-cicd/commit/0d0a17d817cfda00a2956c9ff4e7ac6144503051) de `github-actions[bot]` en `gitops/staging`. Argo CD lo aplicó y `verify-staging` (68 s) corrió el smoke en verde.
+  - *Self-heal*: bajé `api` a 1 réplica con `kubectl scale`. Argo CD la devolvió a 2 en 3 segundos (`OutOfSync -> Synced`).
+- **Qué no me funcionó:**
+  - El bypass del ruleset para GitHub Actions, por lo explicado arriba. El intento quedó registrado en Terraform: el `apply` falló al modificar el ruleset, pero ya había importado los recursos y guardó el bypass en el estado aunque GitHub no lo tenía. El siguiente `plan` quería "quitar" algo que no existía. Un `apply` posterior lo alineó. Lección: un `apply` que falla a la mitad puede dejar el estado distinto de la realidad.
+  - El orden importa. Si la `Application` hubiera existido antes de que el overlay tuviera el bloque `images`, Argo CD habría desplegado `demo-cicd-web:local`, que no existe en ningún registro.
+- **¿Qué gané y qué perdí?** Gané que el pipeline ya **no tiene acceso al clúster**: STAGING se puede reconstruir desde Git, y cualquier cambio manual se revierte solo. El runner propio ya no despliega: solo lee para verificar, y se podría quitar si aceptara no correr el smoke desde el pipeline. Perdí inmediatez: el cambio tarda hasta 60 s en aplicarse (no hay webhook, porque GitHub no alcanza mi laptop). Y la depuración pasa por dos lugares: si algo falla después del commit, hay que mirar Argo CD, no el log del job.
+
 ## Lo que no está aquí, a propósito
 
 - `.github/workflows/`: el pipeline. Es el trabajo de la guía y del laboratorio
