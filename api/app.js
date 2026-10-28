@@ -44,6 +44,14 @@ export function crearApp({ pool, registro = new client.Registry() }) {
     } catch (e) { next(e); }
   });
 
+  app.get("/api/estadisticas", async (_req, res, next) => {
+    try {
+      // COUNT(*) es bigint y pg lo devolvería como texto ("5"): ::int para que el JSON lleve un número.
+      const { rows } = await pool.query("SELECT COUNT(*)::int AS total FROM mensajes");
+      res.json({ total: rows[0].total });
+    } catch (e) { next(e); }
+  });
+
   app.post("/api/mensajes", async (req, res, next) => {
     const nombre = String(req.body?.nombre ?? "").trim();
     const mensaje = String(req.body?.mensaje ?? "").trim();

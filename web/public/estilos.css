@@ -1,6 +1,7 @@
 :root { color-scheme: light dark; --acento: #1f6feb; }
 body { font-family: system-ui, sans-serif; max-width: 46rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.6; }
 .titulo { color: var(--acento); }
+.titulo .total { font-size: .55em; font-weight: 400; color: inherit; opacity: .75; }
 section { margin-block: 2.5rem; }
 
 #libro-de-visitas form { display: grid; gap: .75rem; }
