@@ -7,10 +7,10 @@ Fecha límite: 30/10/2026 23:59. Repositorio: https://github.com/Jesusro-del/dem
 | Ítem | Estado | PR | Run |
 |------|--------|----|-----|
 | B1 Pipeline de la guía | ✅ Hecho (falta solo tu captura) | #1–#8, #13, #17, #18 | [main ✅ STAGING](https://github.com/Jesusro-del/demo-cicd/actions/runs/40559516916) · [Dependabot ✅ STAGING](https://github.com/Jesusro-del/demo-cicd/actions/runs/40702839413) |
-| B2 Dos herramientas cambiadas | ⬜ Pendiente | | |
+| B2 Dos herramientas cambiadas | ✅ Grype y TruffleHog (bitácora en el README) | [#26](https://github.com/Jesusro-del/demo-cicd/pull/26) | [verde](https://github.com/Jesusro-del/demo-cicd/actions/runs/40715089324) · [rojo TruffleHog](https://github.com/Jesusro-del/demo-cicd/actions/runs/40715235000) · [rojo Grype](https://github.com/Jesusro-del/demo-cicd/actions/runs/40715101417) |
 | B3 Cuatro etapas rotas | ✅ Hecho (tabla en el README) | #20–#23 (cerrados sin merge) | 4 rojos y 4 verdes, ver abajo |
 | B4 Endpoint de estadísticas | ✅ Hecho (falta tu captura de STAGING con el total) | [#24](https://github.com/Jesusro-del/demo-cicd/pull/24) | [PR ✅](https://github.com/Jesusro-del/demo-cicd/actions/runs/40706486832) · [main ✅ STAGING](https://github.com/Jesusro-del/demo-cicd/actions/runs/40707117726) |
-| B5 README, badge y resumen | 🟡 En PR (falta tu captura del resumen) | | |
+| B5 README, badge y resumen | ✅ Hecho (falta tu captura del Summary) | [#25](https://github.com/Jesusro-del/demo-cicd/pull/25) | [main con todos los resúmenes](https://github.com/Jesusro-del/demo-cicd/actions/runs/40710466993) |
 | B6 Pipeline 25 % más rápido | ⬜ Pendiente | | |
 
 ## B1: un PR por paso de la guía
