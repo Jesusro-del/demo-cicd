@@ -276,11 +276,35 @@ jobs:
           sleep 3
           bash scripts/smoke.sh http://localhost:8080
           APP_URL=http://localhost:8080 npm run test:integration -- --reporter=default --reporter=json --outputFile.json="$RUNNER_TEMP/integracion-dev.json"
+      # Reto 1: DAST. SAST revisó el código quieto; ZAP revisa la aplicación corriendo en DEV.
+      # Baseline: escaneo pasivo (navega y mira las respuestas, no ataca), apto para cada push.
+      # Sin -I: una alerta WARN o FAIL que no esté aceptada en zap/reglas.conf pone el job en rojo.
+      # --network host: ZAP llega al port-forward del runner. La carpeta zap/ se abre para el usuario de ZAP (uid 1000).
+      - name: OWASP ZAP baseline contra DEV
+        run: |
+          kubectl -n demo-dev port-forward svc/web 8081:80 > /dev/null 2>&1 &
+          sleep 3
+          chmod 777 zap
+          REGLAS=""; [ -f zap/reglas.conf ] && REGLAS="-c reglas.conf"
+          docker run --rm --network host -v "$PWD/zap:/zap/wrk:rw" zaproxy/zap-stable:20261016 \
+            zap-baseline.py -t http://localhost:8081 $REGLAS \
+            -g reglas-generadas.conf -r informe.html -J informe.json
+      - name: Informe de ZAP como artefacto
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: zap-informe-dev
+          path: |
+            zap/informe.html
+            zap/informe.json
+            zap/reglas-generadas.conf
+          if-no-files-found: warn
       - name: Resumen de DEV
         if: ${{ !cancelled() }}
         run: |
           echo "### DEV (kind, efímero): imágenes \`sha-${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
           node scripts/resumen.mjs pruebas "$RUNNER_TEMP/integracion-dev.json" "Pruebas de integración contra DEV"
+          node scripts/resumen.mjs zap zap/informe.json "OWASP ZAP baseline contra DEV"
       - name: Diagnóstico (solo si algo falló)
         if: failure()
         run: |
