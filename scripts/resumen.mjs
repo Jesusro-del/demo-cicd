@@ -73,11 +73,15 @@ if (tipo === "pruebas") {
     md += "\n| Severidad | Vulnerabilidad | Paquete | Instalada | Corregida en |\n|---|---|---|---|---|\n";
     for (const v of frenan) md += `| ${v.sev} | ${celda(v.id)} | ${celda(v.pkg)} | ${celda(v.version)} | ${celda(v.fix)} |\n`;
   }
-  if (aceptadas.length) {
-    md += `\n<details><summary>Aceptadas en .grype.yaml (${aceptadas.length})</summary>\n\n`;
-    md += aceptadas.map((m) => `${m.vulnerability.id} (${m.vulnerability.severity}, ${m.artifact.name} ${m.artifact.version})`).join(", ");
-    md += "\n\n</details>\n";
-  }
+  // El detalle completo, plegado: lo que no frena también se ve, para que nada quede escondido.
+  const lista = (titulo, ms) => {
+    if (!ms.length) return "";
+    const items = ms.map((m) => `${m.vulnerability.id} (${m.vulnerability.severity}, ${m.artifact.name} ${m.artifact.version})`);
+    return `\n<details><summary>${titulo} (${ms.length})</summary>\n\n${celda(items.join(", "))}\n\n</details>\n`;
+  };
+  md += lista("Con parche que no frenan (Medium, Low)", (datos.matches ?? []).filter((m) => !["Critical", "High"].includes(m.vulnerability.severity)));
+  md += lista("Sin parche", sinParche);
+  md += lista("Aceptadas en .grype.yaml", aceptadas);
   escribir(md);
 } else {
   console.error(`Tipo desconocido: ${tipo}. Usa "pruebas", "trivy" o "grype".`);
