@@ -111,3 +111,9 @@ El "antes" es el primer run completo de `main` en verde, sin contar la espera de
 - Alternativa descartada: acciones de terceros como `dorny/test-reporter`, que piden `checks: write` y suman otra dependencia que fijar.
 
 "Después": run [40726077089](https://github.com/Jesusro-del/demo-cicd/actions/runs/40726077089) (segundo run de `main` tras #27, con la caché de Grype llena). El primer run tras el merge ([40725060445](https://github.com/Jesusro-del/demo-cicd/actions/runs/40725060445)), con la caché vacía y un rollout real en STAGING, tardó 5:10. La meta del 25 % (≤ 3:01) no se alcanzó; el análisis completo está en el README.
+
+## Retos
+
+| Reto | Estado | PR | Runs |
+|------|--------|----|------|
+| R1 DAST con OWASP ZAP | ✅ En PR (bitácora en el README) | [#29](https://github.com/Jesusro-del/demo-cicd/pull/29) | [rojo, 7 alertas](https://github.com/Jesusro-del/demo-cicd/actions/runs/40728141052) · [verde con informe](https://github.com/Jesusro-del/demo-cicd/actions/runs/40729885668) |

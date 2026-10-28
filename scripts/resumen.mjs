@@ -83,7 +83,20 @@ if (tipo === "pruebas") {
   md += lista("Sin parche", sinParche);
   md += lista("Aceptadas en .grype.yaml", aceptadas);
   escribir(md);
+} else if (tipo === "zap") {
+  // riskcode: 3 alto, 2 medio, 1 bajo, 0 informativo. El nivel con el que frena lo decide zap/reglas.conf.
+  const riesgo = ["Informativo", "Bajo", "Medio", "Alto"];
+  const alertas = (datos.site ?? []).flatMap((s) => s.alerts ?? [])
+    .sort((a, b) => Number(b.riskcode) - Number(a.riskcode));
+  let md = `### 🕷️ ${titulo}\n\n`;
+  if (!alertas.length) md += "Sin alertas.\n";
+  else {
+    md += "| Riesgo | Alerta | Regla | Instancias |\n|---|---|:-:|:-:|\n";
+    for (const a of alertas) md += `| ${riesgo[Number(a.riskcode)] ?? a.riskcode} | ${celda(a.name)} | ${celda(a.pluginid)} | ${celda(a.count)} |\n`;
+    md += "\nLas aceptadas, con su porqué, están en `zap/reglas.conf`. El informe completo está en los artefactos del run.\n";
+  }
+  escribir(md);
 } else {
-  console.error(`Tipo desconocido: ${tipo}. Usa "pruebas", "trivy" o "grype".`);
+  console.error(`Tipo desconocido: ${tipo}. Usa "pruebas", "trivy", "grype" o "zap".`);
   process.exit(2);
 }
