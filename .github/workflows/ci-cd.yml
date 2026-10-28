@@ -229,5 +229,18 @@ jobs:
           kubectl -n demo-staging rollout status deploy/db  --timeout=180s
           kubectl -n demo-staging rollout status deploy/api --timeout=180s
           kubectl -n demo-staging rollout status deploy/web --timeout=180s
+      # rollout status termina cuando los pods nuevos están listos, pero los viejos todavía se están borrando
+      # y el Service puede enviarles alguna conexión. El smoke tiene que probar el estado final, no la transición.
+      - name: Esperar a que se borren los pods viejos
+        run: |
+          for i in $(seq 1 45); do
+            viejos=$(kubectl -n demo-staging get pods -o jsonpath='{.items[?(@.metadata.deletionTimestamp)].metadata.name}')
+            [ -z "$viejos" ] && echo "Sin pods terminando" && exit 0
+            echo "Terminando: $viejos"
+            sleep 2
+          done
+          echo "Pasaron 90 s y siguen pods terminando"
+          kubectl -n demo-staging get pods
+          exit 1
       - name: Smoke test
         run: bash scripts/smoke.sh http://localhost:30080
