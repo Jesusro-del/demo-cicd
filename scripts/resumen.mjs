@@ -3,6 +3,7 @@
 // Uso:
 //   node scripts/resumen.mjs pruebas <vitest.json> "<título>"
 //   node scripts/resumen.mjs trivy <trivy.json> "<imagen>"
+//   node scripts/resumen.mjs grype <grype.json> "<imagen>"
 // Si el JSON no existe (el paso anterior ni llegó a correr), lo dice en vez de fallar:
 // el job ya está en rojo por su propio paso, el resumen solo informa.
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
@@ -49,7 +50,40 @@ if (tipo === "pruebas") {
     }
   }
   escribir(md);
+} else if (tipo === "grype") {
+  // Con --only-fixed, matches trae solo lo que tiene parche. ignoredMatches mezcla dos cosas: lo que descarta
+  // --only-fixed (regla con fix-state) y lo aceptado en .grype.yaml (regla con vulnerability). Se separan.
+  // Grype escribe la severidad con mayúscula inicial ("High").
+  const ignoradas = datos.ignoredMatches ?? [];
+  const porRegla = (campo) => ignoradas.filter((m) => (m.appliedIgnoreRules ?? []).some((r) => r[campo]));
+  const aceptadas = porRegla("vulnerability");
+  const sinParche = ignoradas.filter((m) => !aceptadas.includes(m));
+  const vulns = (datos.matches ?? []).map((m) => ({
+    sev: m.vulnerability.severity, id: m.vulnerability.id,
+    pkg: m.artifact.name, version: m.artifact.version, fix: (m.vulnerability.fix?.versions ?? []).join(", "),
+  }));
+  const frenan = vulns.filter((v) => v.sev === "Critical" || v.sev === "High");
+  const cuenta = (sev) => vulns.filter((v) => v.sev === sev).length;
+  const icono = frenan.length === 0 ? "✅" : "❌";
+  let md = `### ${icono} Grype: ${titulo}\n\n`;
+  md += "Por severidad, las que tienen parche: frenan `Critical` y `High`. Aparte, las que no tienen parche (no frenan) y las aceptadas en `.grype.yaml`.\n\n";
+  md += "| Critical | High | Medium | Low | Sin parche | Aceptadas |\n|:-:|:-:|:-:|:-:|:-:|:-:|\n";
+  md += `| ${cuenta("Critical")} | ${cuenta("High")} | ${cuenta("Medium")} | ${cuenta("Low")} | ${sinParche.length} | ${aceptadas.length} |\n`;
+  if (frenan.length) {
+    md += "\n| Severidad | Vulnerabilidad | Paquete | Instalada | Corregida en |\n|---|---|---|---|---|\n";
+    for (const v of frenan) md += `| ${v.sev} | ${celda(v.id)} | ${celda(v.pkg)} | ${celda(v.version)} | ${celda(v.fix)} |\n`;
+  }
+  // El detalle completo, plegado: lo que no frena también se ve, para que nada quede escondido.
+  const lista = (titulo, ms) => {
+    if (!ms.length) return "";
+    const items = ms.map((m) => `${m.vulnerability.id} (${m.vulnerability.severity}, ${m.artifact.name} ${m.artifact.version})`);
+    return `\n<details><summary>${titulo} (${ms.length})</summary>\n\n${celda(items.join(", "))}\n\n</details>\n`;
+  };
+  md += lista("Con parche que no frenan (Medium, Low)", (datos.matches ?? []).filter((m) => !["Critical", "High"].includes(m.vulnerability.severity)));
+  md += lista("Sin parche", sinParche);
+  md += lista("Aceptadas en .grype.yaml", aceptadas);
+  escribir(md);
 } else {
-  console.error(`Tipo desconocido: ${tipo}. Usa "pruebas" o "trivy".`);
+  console.error(`Tipo desconocido: ${tipo}. Usa "pruebas", "trivy" o "grype".`);
   process.exit(2);
 }
