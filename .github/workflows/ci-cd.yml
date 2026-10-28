@@ -55,8 +55,11 @@ jobs:
       #   de un servicio sin API de verificación también es un secreto. --no-update: la versión fija manda.
       # --user: el repo montado es del usuario del runner; así git no se niega a leerlo (dubious ownership).
       # TruffleHog no tiene --redact: jq deja solo dónde está y de qué tipo es, nunca el valor.
-      #   El log de Actions es público. Con pipefail (bash de Actions), si TruffleHog falla, el paso falla.
+      #   El log de Actions es público.
+      # shell: bash es obligatorio aquí: solo así GitHub usa -o pipefail. Sin él (bash -e a secas), si
+      #   TruffleHog encuentra algo y falla, jq termina bien y el paso quedaría en verde: el escáner apagado.
       - name: TruffleHog, secretos en el historial de Git
+        shell: bash
         run: |
           docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo:ro" trufflesecurity/trufflehog:3.99.3 \
             git file:///repo --fail --no-update --json --results=verified,unverified,unknown \
