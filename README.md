@@ -168,6 +168,37 @@ Lo que muestra la última columna: un error de sintaxis o de configuración se d
 
 En cada caso se pone en rojo solo la etapa rota: lo que depende de ella queda *skipped* y la rama paralela sigue en verde (por ejemplo, con `sast` en rojo, `lint`, `test-unit` y `test-integration` pasan y `package` no corre).
 
+## B6: pipeline más rápido
+
+Tiempos sacados de la pestaña Actions. **Total** = desde que arrancan los primeros jobs hasta que termina `deploy-staging`, por el camino más largo y sin contar la espera de la aprobación.
+
+- **Antes:** el primer run de `main` en verde, [40559516916](https://github.com/Jesusro-del/demo-cicd/actions/runs/40559516916).
+- **Después:** [40726077089](https://github.com/Jesusro-del/demo-cicd/actions/runs/40726077089), segundo run de `main` con los cambios ([#27](https://github.com/Jesusro-del/demo-cicd/pull/27)) y la caché de Grype ya llena.
+
+En los dos, STAGING no tenía nada que actualizar (en el "antes", los pods ya estaban listos tras un `rollout restart`; en el "después", el run repite el commit del anterior), así que `deploy-staging` es comparable.
+
+| Job | Antes | Después | Qué cambió |
+|-----|:-----:|:-------:|------------|
+| lint | 16 s | 22 s | Nada; variación del runner |
+| sast | 21 s | 27 s | TruffleHog en vez de Gitleaks (B2) |
+| test-unit | 15 s, después de `lint` | 11 s, en paralelo | Ya no espera a `lint` |
+| test-integration | 37 s, después de `test-unit` | 54 s, en paralelo | Ya no espera; imágenes con la caché de `package` (13 s). Este run fue lento: en otros, 38–47 s |
+| **Primera fase** (hasta que puede arrancar `package`) | **1:14** | **0:55** | Las cuatro compuertas en paralelo; `package` necesita las cuatro |
+| package (máx. de los tres) | 36 s | 24 s | Solo amd64, sin QEMU |
+| security (máx. de los tres) | 17 s (Trivy) | 34 s (Grype) | Grype con caché diaria de su base (sin caché: ~100 s) |
+| deploy-dev | 87 s (kind) | 73 s (k3d) | Clúster en 12 s (kind: 41 s); el rollout sube a 35 s porque k3s descarga las imágenes |
+| deploy-staging | 17 s | 18 s | Checkout parcial; `concurrency` y solo desde `main` |
+| **Total** | **4:02** | **3:34** | **−11,6 %** |
+
+**No llegué al 25 %.** Qué pasó con cada pregunta del enunciado:
+- **¿`test-unit` necesita a `lint`?** No. Ninguna prueba necesita a otra: corren las cuatro a la vez y `package` las espera a todas. Es la mejora más grande (−19 s). El precio: si el lint falla, las pruebas ya gastaron sus minutos.
+- **¿`security` necesita esperar a los tres `package`?** Con una matriz, sí: un job de la matriz siguiente no arranca hasta que termina toda la anterior. Separarlo en tres cadenas `package-web → security-web` ahorraría unos 5 s, a cambio de seis jobs repetidos. No lo hice.
+- **La caché de capas de Docker** ya la usaba `package`. No la usaba `test-integration`, que construía las tres imágenes desde cero. Ahora las construye con `bake` reusando la caché de `package`.
+- **La caché de la base de vulnerabilidades** fue lo más importante para Grype: sin ella, `security` tardaba ~100 s. Aun con caché, Grype tarda el doble que Trivy, porque solo restaurar su base (482 MB) lleva 15 s. El cambio del B2 le costó 17 s al B6.
+- **`deploy-dev`:** con kind, 41 s eran el clúster y 19 s el rollout. Con k3d, el clúster baja a 12 s, pero el rollout sube a 35 s, porque el nodo arranca sin imágenes. La ganancia neta es de 14 s.
+
+**Qué haría para llegar al 25 %:** volver a Trivy en `security` (~−17 s, total ≈ 3:17, −19 %), y precargar las imágenes en el nodo de k3d mientras el clúster arranca (estimo −10 a −15 s). El ruido del runner también pesa: `test-integration` varió entre 38 y 54 s en runs iguales.
+
 ## Bitácora de decisiones
 
 ### B2: Grype en vez de Trivy, TruffleHog en vez de Gitleaks

@@ -11,7 +11,7 @@ Fecha límite: 30/10/2026 23:59. Repositorio: https://github.com/Jesusro-del/dem
 | B3 Cuatro etapas rotas | ✅ Hecho (tabla en el README) | #20–#23 (cerrados sin merge) | 4 rojos y 4 verdes, ver abajo |
 | B4 Endpoint de estadísticas | ✅ Hecho (falta tu captura de STAGING con el total) | [#24](https://github.com/Jesusro-del/demo-cicd/pull/24) | [PR ✅](https://github.com/Jesusro-del/demo-cicd/actions/runs/40706486832) · [main ✅ STAGING](https://github.com/Jesusro-del/demo-cicd/actions/runs/40707117726) |
 | B5 README, badge y resumen | ✅ Hecho (falta tu captura del Summary) | [#25](https://github.com/Jesusro-del/demo-cicd/pull/25) | [main con todos los resúmenes](https://github.com/Jesusro-del/demo-cicd/actions/runs/40710466993) |
-| B6 Pipeline 25 % más rápido | ⬜ Pendiente | | |
+| B6 Pipeline 25 % más rápido | 🟡 −11,6 % (4:02 → 3:34); tabla y análisis en el README | [#27](https://github.com/Jesusro-del/demo-cicd/pull/27) | [antes](https://github.com/Jesusro-del/demo-cicd/actions/runs/40559516916) · [después](https://github.com/Jesusro-del/demo-cicd/actions/runs/40726077089) |
 
 ## B1: un PR por paso de la guía
 
@@ -86,15 +86,15 @@ El "antes" es el primer run completo de `main` en verde, sin contar la espera de
 
 | Job | Antes | Después |
 |-----|-------|---------|
-| lint | 16 s | |
-| sast | 21 s | |
-| test-unit | 15 s | |
-| test-integration | 37 s (`compose up` ~24 s) | |
-| package (máx. de los tres) | 36 s (db) | |
-| security (máx. de los tres) | 17 s (db) | |
-| deploy-dev | 87 s (kind ~41 s, rollout ~19 s) | |
-| deploy-staging | 17 s (pods ya listos tras el restart; un rollout normal tarda más) | |
-| **Total** | **≈ 4 min 02 s** (3 min 45 s hasta DEV + 17 s) | |
+| lint | 16 s | 22 s |
+| sast | 21 s | 27 s (TruffleHog) |
+| test-unit | 15 s | 11 s (en paralelo) |
+| test-integration | 37 s (`compose up` ~24 s) | 54 s en paralelo (bake 13 s + up 13 s; otros runs 38–47 s) |
+| package (máx. de los tres) | 36 s (db) | 24 s (sin QEMU) |
+| security (máx. de los tres) | 17 s (db) | 34 s (Grype con caché; sin caché ~100 s) |
+| deploy-dev | 87 s (kind ~41 s, rollout ~19 s) | 73 s (k3d 12 s, rollout 35 s) |
+| deploy-staging | 17 s (pods ya listos tras el restart; un rollout normal tarda más) | 18 s (mismo commit que el run anterior: nada que actualizar) |
+| **Total** | **≈ 4 min 02 s** (3 min 45 s hasta DEV + 17 s) | **3 min 34 s** (3 min 16 s hasta DEV + 18 s): **−11,6 %** |
 
 ## B4: GET /api/estadisticas
 
@@ -109,3 +109,5 @@ El "antes" es el primer run completo de `main` en verde, sin contar la espera de
 - README: badge, diagrama Mermaid y tabla de las 8 etapas (herramienta, qué revisa, qué pasa si falla, evento).
 - `scripts/resumen.mjs` convierte el JSON de Vitest y de Trivy en tablas para `$GITHUB_STEP_SUMMARY`. Trivy sigue con `exit-code: "1"`: solo cambió `format: table` por `format: json`.
 - Alternativa descartada: acciones de terceros como `dorny/test-reporter`, que piden `checks: write` y suman otra dependencia que fijar.
+
+"Después": run [40726077089](https://github.com/Jesusro-del/demo-cicd/actions/runs/40726077089) (segundo run de `main` tras #27, con la caché de Grype llena). El primer run tras el merge ([40725060445](https://github.com/Jesusro-del/demo-cicd/actions/runs/40725060445)), con la caché vacía y un rollout real en STAGING, tardó 5:10. La meta del 25 % (≤ 3:01) no se alcanzó; el análisis completo está en el README.
