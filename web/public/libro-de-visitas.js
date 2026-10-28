@@ -9,6 +9,7 @@ const seccion = document.getElementById("libro-de-visitas");
 const lista = document.getElementById("lista-mensajes");
 const form = document.getElementById("form-mensaje");
 const estado = document.getElementById("form-estado");
+const total = document.getElementById("total-mensajes");
 
 function pintar(mensajes) {
   lista.replaceChildren(
@@ -35,6 +36,18 @@ async function cargar() {
   pintar(await r.json());
 }
 
+// El total junto al título. Si la API no contesta, el span se queda vacío: no se muestra nada roto.
+async function cargarTotal() {
+  try {
+    const r = await fetch(`${API}/estadisticas`, { headers: { Accept: "application/json" } });
+    if (!r.ok) return;
+    const { total: n } = await r.json();
+    total.textContent = `· ${n} ${n === 1 ? "mensaje" : "mensajes"}`;
+  } catch {
+    // Sin API no hay total; el resto de la página sigue funcionando.
+  }
+}
+
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   const datos = Object.fromEntries(new FormData(form));
@@ -49,7 +62,7 @@ form.addEventListener("submit", async (e) => {
     if (!r.ok) throw new Error(cuerpo.error || `HTTP ${r.status}`);
     form.reset();
     estado.textContent = "¡Gracias por tu mensaje!";
-    await cargar();
+    await Promise.all([cargar(), cargarTotal()]);
   } catch (err) {
     estado.textContent = `No se pudo enviar: ${err.message}`;
   }
@@ -59,3 +72,4 @@ form.addEventListener("submit", async (e) => {
 cargar()
   .then(() => { seccion.hidden = false; })
   .catch((err) => console.info("Libro de visitas oculto:", err.message));
+cargarTotal();

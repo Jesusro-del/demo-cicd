@@ -22,6 +22,10 @@ describe("index.html", () => {
     expect(doc.querySelectorAll("h1")).toHaveLength(1);
   });
 
+  it("el total de mensajes va junto al título", () => {
+    expect(doc.querySelector("h1 #total-mensajes")).not.toBeNull();
+  });
+
   it("todas las imágenes tienen texto alternativo", () => {
     const sinAlt = [...doc.querySelectorAll("img")].filter((img) => !img.getAttribute("alt"));
     expect(sinAlt).toHaveLength(0);
