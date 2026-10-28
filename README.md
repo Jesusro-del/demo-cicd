@@ -199,7 +199,7 @@ En los dos, STAGING no tenía nada que actualizar (en el "antes", los pods ya es
 
 **Qué haría para llegar al 25 %:** volver a Trivy en `security` (~−17 s, total ≈ 3:17, −19 %), y precargar las imágenes en el nodo de k3d mientras el clúster arranca (estimo −10 a −15 s). El ruido del runner también pesa: `test-integration` varió entre 38 y 54 s en runs iguales.
 
-**Qué no me funcionó: el `concurrency` de STAGING.** Lo agregué con `cancel-in-progress: false`, pensando que un despliegue nuevo cancelaría al pendiente. Pasó lo contrario. El job del PR #28, esperando la aprobación, ya ocupaba el grupo, y el despliegue del PR #29 se quedó en cola detrás de él ([40727836457](https://github.com/Jesusro-del/demo-cicd/actions/runs/40727836457) y [40731484066](https://github.com/Jesusro-del/demo-cicd/actions/runs/40731484066)). Hubo que rechazar el viejo a mano. Lo cambié a `cancel-in-progress: true`: gana el despliegue más nuevo. El precio es que un despliegue que ya está aplicando cambios se corta si llega otro en esos ~40 s; el siguiente lo completa, porque `kubectl apply` es idempotente.
+**Qué no me funcionó: el `concurrency` de STAGING.** Lo agregué con `cancel-in-progress: false`, pensando que un despliegue nuevo cancelaría al pendiente. Pasó lo contrario. El job del PR #28, esperando la aprobación, ya ocupaba el grupo, y el despliegue del PR #29 se quedó en cola detrás de él ([40727836457](https://github.com/Jesusro-del/demo-cicd/actions/runs/40727836457) y [40731484066](https://github.com/Jesusro-del/demo-cicd/actions/runs/40731484066)). Hubo que rechazar el viejo a mano. Lo cambié a `cancel-in-progress: true`: gana el despliegue más nuevo. El precio es que un despliegue que ya está aplicando cambios se corta si llega otro en esos ~40 s; el siguiente lo completa, porque `kubectl apply` es idempotente. Lo probé con dos runs seguidos sobre `main`: cuando el segundo ([40735065247](https://github.com/Jesusro-del/demo-cicd/actions/runs/40735065247)) llegó a STAGING, el primero ([40734343540](https://github.com/Jesusro-del/demo-cicd/actions/runs/40734343540)), que esperaba la aprobación, se canceló solo.
 
 ## Bitácora de decisiones
 
@@ -255,6 +255,22 @@ En los dos, STAGING no tenía nada que actualizar (en el "antes", los pods ya es
   - La primera tanda de cabeceras dejó la regla 90004 a medias. Esa regla revisa tres cabeceras (CORP, COEP y COOP) y yo solo había puesto la primera.
   - El baseline no ejecuta JavaScript, así que nunca llamó a `/api/`, y por eso no vio el `X-Powered-By: Express` de la API. Lo oculté igual con `proxy_hide_header`: el escáner no es la única fuente de verdad.
 - **Cuándo una alerta es un falso positivo y cuándo es aceptar un riesgo:** un falso positivo es una alerta que no describe algo real (por ejemplo, ZAP marca como "información filtrada" un texto que no es sensible). Aceptar el riesgo es reconocer que el problema existe y decidir no arreglarlo, con un porqué. Las dos cosas van en `reglas.conf` como IGNORE, pero el comentario tiene que decir cuál de las dos es. Hoy no hay ninguna.
+
+### Reto 6: La plataforma también es código (Terraform)
+
+- **Decisión:** en [`terraform/`](terraform/), el ruleset de `main` y los ambientes `dev` y `staging` con el provider `integrations/github` 6.13.0 y Terraform 1.17.0, los dos con versión fija y `.terraform.lock.hcl` versionado. Como todo existía, uso bloques `import` en vez de crear. El estado queda local, fuera de Git.
+- **Alternativas que evalué:**
+  - *Ansible para el runner*: el otro camino del reto. Tiene más sentido en una máquina Linux; en mi Windows con Rancher Desktop, el playbook necesitaría WinRM o WSL, y el runner lo registré justamente sin servicio.
+  - *`terraform import` por línea de comandos*: hace lo mismo, pero no queda en el código. Los bloques `import` sí quedan, y se revisan en el PR.
+  - *Estado en Terraform Cloud o en un bucket*: es lo correcto para un equipo, pero suma una cuenta y un token. Para una persona alcanza con el estado local (ver [`terraform/README.md`](terraform/README.md)).
+  - *OpenTofu*: compatible y con licencia abierta. Elegí Terraform porque es lo que nombra el reto.
+- **Por qué elegí esta:** son las tres cosas que configuré a mano y las tres me dieron problemas: el ruleset hubo que corregirlo en el B2 cuando cambió el nombre de un job, y `staging` hubo que crearlo antes del primer merge para no desplegar sin aprobación. En código, esos cambios pasan por un PR.
+- **Fuentes consultadas:**
+  - Provider `integrations/github`: [`github_repository_ruleset`](https://registry.terraform.io/providers/integrations/github/latest/docs/resources/repository_ruleset) y [`github_repository_environment`](https://registry.terraform.io/providers/integrations/github/latest/docs/resources/repository_environment).
+  - [Bloques `import`](https://developer.hashicorp.com/terraform/language/import).
+  - [Backends y estado](https://developer.hashicorp.com/terraform/language/state).
+- **Cómo lo verifiqué:** `terraform init`, `fmt -check` y `validate` sin errores. `terraform plan` contra el repositorio real dio `Plan: 3 to import, 0 to add, 0 to change, 0 to destroy`, a la primera, porque escribí cada campo a partir de lo que devuelve `gh api` (ruleset y ambientes). PR: [#31](https://github.com/Jesusro-del/demo-cicd/pull/31).
+- **Qué no me funcionó:** nada en el `plan`. Lo que sí aprendí: el ruleset exige los checks **por nombre**, y en el B2 renombrar un job dejó `main` bloqueada. Ahora la lista de checks está en `variables.tf`: cambiar un nombre es un PR que toca el workflow y Terraform a la vez.
 
 ## Lo que no está aquí, a propósito
 

@@ -116,4 +116,5 @@ El "antes" es el primer run completo de `main` en verde, sin contar la espera de
 
 | Reto | Estado | PR | Runs |
 |------|--------|----|------|
-| R1 DAST con OWASP ZAP | ✅ En PR (bitácora en el README) | [#29](https://github.com/Jesusro-del/demo-cicd/pull/29) | [rojo, 7 alertas](https://github.com/Jesusro-del/demo-cicd/actions/runs/40728141052) · [verde con informe](https://github.com/Jesusro-del/demo-cicd/actions/runs/40729885668) |
+| R1 DAST con OWASP ZAP | ✅ Hecho y en STAGING (bitácora en el README) | [#29](https://github.com/Jesusro-del/demo-cicd/pull/29) | [rojo, 7 alertas](https://github.com/Jesusro-del/demo-cicd/actions/runs/40728141052) · [verde con informe](https://github.com/Jesusro-del/demo-cicd/actions/runs/40729885668) |
+| R6 Terraform (ruleset y ambientes) | ✅ `plan`: 3 to import, 0 to change | [#31](https://github.com/Jesusro-del/demo-cicd/pull/31) | (se verifica con `terraform plan`, no en Actions) |
