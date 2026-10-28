@@ -59,6 +59,7 @@ jobs:
       # shell: bash es obligatorio aquí: solo así GitHub usa -o pipefail. Sin él (bash -e a secas), si
       #   TruffleHog encuentra algo y falla, jq termina bien y el paso quedaría en verde: el escáner apagado.
       - name: TruffleHog, secretos en el historial de Git
+        if: ${{ !cancelled() }}         # corre aunque Semgrep haya fallado: los dos escáneres informan siempre
         shell: bash
         run: |
           docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo:ro" trufflesecurity/trufflehog:3.99.3 \
