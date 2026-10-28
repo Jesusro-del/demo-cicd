@@ -1,0 +1,21 @@
+# Reto 3: Prometheus y Grafana, también administrados por Argo CD. Sigue la carpeta observabilidad/ en main.
+# Se aplica una sola vez, a mano, después de crear el Secret grafana-admin (ver k8s/argocd/README.md):
+#   kubectl apply -n argocd -f k8s/argocd/observabilidad.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: observabilidad
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Jesusro-del/demo-cicd.git
+    targetRevision: main          # aquí no hay versión que promover: el último main es lo que vale
+    path: observabilidad
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observabilidad
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
