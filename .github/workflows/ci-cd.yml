@@ -105,10 +105,25 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci
+      # B6: las tres imágenes se construían desde cero en cada run. bake lee el mismo compose.yaml y reusa la
+      # caché de capas que deja package (scopes web, api y db; aquí solo se lee). load: quedan en el Docker local.
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Construir las imágenes con la caché de package
+        uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
+        env:
+          DB_PASSWORD: solo-para-leer-compose   # compose.yaml exige la variable; construir no la usa
+        with:
+          files: compose.yaml
+          targets: web,api,db
+          load: true
+          set: |
+            web.cache-from=type=gha,scope=web
+            api.cache-from=type=gha,scope=api
+            db.cache-from=type=gha,scope=db
       - name: Levantar la aplicación
         run: |
           echo "DB_PASSWORD=$(openssl rand -hex 12)" > .env
-          docker compose up -d --build --wait
+          docker compose up -d --no-build --wait
       - run: npm run test:integration -- --reporter=default --reporter=json --outputFile.json="$RUNNER_TEMP/integracion.json"
       - name: Resumen de las pruebas
         if: ${{ !cancelled() }}
@@ -229,10 +244,19 @@ jobs:
           cache: npm
       - run: npm ci
       - run: echo "PREFIJO=ghcr.io/$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')/demo-cicd" >> "$GITHUB_ENV"
-      - name: Crear el clúster (kind)
-        uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
-        with:
-          cluster_name: dev
+      # B6: k3d en vez de kind. k3s es una distribución liviana de Kubernetes (la misma que usa Rancher Desktop,
+      # y la misma versión, v1.36.4): el clúster arranca en menos tiempo. Binario con versión fija y checksum.
+      - name: Instalar k3d (versión fija, checksum verificado)
+        run: |
+          curl -fsSLo k3d https://github.com/k3d-io/k3d/releases/download/v5.9.0/k3d-linux-amd64
+          echo "06d8f25bc3a971c4eb29e0ff08429b180402db0f4dec838c9eac427e296800a0  k3d" | sha256sum -c -
+          sudo install k3d /usr/local/bin/k3d
+      # --no-lb: sin el balanceador delante (DEV se usa con port-forward). Sin traefik ni metrics-server:
+      # DEV no los usa y arrancarlos solo suma tiempo. --wait: no sigue hasta que el nodo está listo.
+      - name: Crear el clúster (k3d)
+        run: >
+          k3d cluster create dev --image rancher/k3s:v1.36.4-k3s1 --no-lb --wait --timeout 120s
+          --k3s-arg "--disable=traefik@server:0" --k3s-arg "--disable=metrics-server@server:0"
       - name: Namespace y secretos
         run: |
           kubectl create namespace demo-dev
@@ -289,7 +313,12 @@ jobs:
         # y no entiende comillas, así que la ruta no puede llevar espacios.
         shell: C:\PROGRA~1\Git\bin\bash.exe --noprofile --norc -eo pipefail {0}
     steps:
+      # B6: en el runner de Windows el checkout completo tardaba 8 s. STAGING solo usa los manifiestos y los scripts.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: |
+            k8s
+            scripts
       - run: echo "PREFIJO=ghcr.io/$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')/demo-cicd" >> "$GITHUB_ENV"
       - name: Desplegar la misma imagen que pasó por DEV
         run: scripts/desplegar.sh k8s/overlays/staging "$PREFIJO" "sha-${{ github.sha }}"

@@ -14,7 +14,7 @@ flowchart LR
     S["2 sast"] --> P
     TU["3 test-unit"] --> P
     TI["4 test-integration"] --> P
-    P --> SEC["6 security<br/>web · api · db"] --> DEV["7 deploy-dev<br/>kind, efímero"] --> AP{"aprobación"} --> STG["8 deploy-staging<br/>Rancher Desktop"]
+    P --> SEC["6 security<br/>web · api · db"] --> DEV["7 deploy-dev<br/>k3d, efímero"] --> AP{"aprobación"} --> STG["8 deploy-staging<br/>Rancher Desktop"]
     style L fill:#4ba3c7,stroke:#4ba3c7,color:#fff
     style S fill:#d9635f,stroke:#d9635f,color:#fff
     style TU fill:#4ba3c7,stroke:#4ba3c7,color:#fff
@@ -36,7 +36,7 @@ flowchart LR
 | 4 | `test-integration` | Docker Compose y Vitest (`fetch`) | La aplicación completa dentro del runner, entrando por nginx: 7 pruebas | Job en rojo y se imprimen los logs de los contenedores | PR y push a `main` |
 | 5 | `package` | Docker Buildx, GitHub Packages (GHCR) | Que las tres imágenes construyan (amd64 y arm64) y se publiquen con tag `sha-<commit>` | Job en rojo; no hay imagen que escanear ni desplegar | PR y push a `main` |
 | 6 | `security` | Grype v0.121.0 (contenedor; `--fail-on high`, solo con parche) | Vulnerabilidades de cada imagen publicada; las aceptadas están en [`.grype.yaml`](.grype.yaml), una por una con su porqué y acotadas al binario | Job en rojo con la tabla de vulnerabilidades en el resumen; nada llega a DEV | PR y push a `main` |
-| 7 | `deploy-dev` | kind, kubectl y Kustomize | Despliega en un clúster creado dentro del runner; espera el rollout; smoke test y las 7 pruebas de integración contra Kubernetes | Job en rojo con el diagnóstico de los pods; STAGING no se ofrece | Solo push a `main` |
+| 7 | `deploy-dev` | k3d (k3s v1.36.4), kubectl y Kustomize | Despliega en un clúster creado dentro del runner; espera el rollout; smoke test y las 7 pruebas de integración contra Kubernetes | Job en rojo con el diagnóstico de los pods; STAGING no se ofrece | Solo push a `main` |
 | 8 | `deploy-staging` | Runner propio (Windows), kubectl, Rancher Desktop | Con **aprobación manual** (environment `staging`): despliega la misma imagen, espera el rollout y a que se borren los pods viejos, y corre el smoke contra `http://localhost:30080` | Job en rojo; los datos de Postgres siguen en su volumen | Solo push a `main` (o `workflow_dispatch` sobre `main`), después de aprobar. Un despliegue pendiente se cancela si llega uno más nuevo |
 
 `main` está protegida: no se puede hacer merge si falla `lint`, `sast`, `test-unit`, `test-integration`, `package` (×3) o `security` (×3). Dependabot propone actualizaciones semanales de acciones, npm e imágenes base, con 7 días de `cooldown`.
