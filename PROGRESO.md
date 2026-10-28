@@ -8,7 +8,7 @@ Fecha límite: 30/10/2026 23:59. Repositorio: https://github.com/Jesusro-del/dem
 |------|--------|----|-----|
 | B1 Pipeline de la guía | ✅ Hecho (falta solo tu captura) | #1–#8, #13, #17, #18 | [main ✅ STAGING](https://github.com/Jesusro-del/demo-cicd/actions/runs/40559516916) · [Dependabot ✅ STAGING](https://github.com/Jesusro-del/demo-cicd/actions/runs/40702839413) |
 | B2 Dos herramientas cambiadas | ⬜ Pendiente | | |
-| B3 Cuatro etapas rotas | ⬜ Pendiente | | |
+| B3 Cuatro etapas rotas | ✅ Hecho (tabla en el README) | #20–#23 (cerrados sin merge) | 4 rojos y 4 verdes, ver abajo |
 | B4 Endpoint de estadísticas | ⬜ Pendiente | | |
 | B5 README, badge y resumen | ⬜ Pendiente | | |
 | B6 Pipeline 25 % más rápido | ⬜ Pendiente | | |
@@ -71,6 +71,12 @@ Pendiente para la entrega: captura de `kubectl -n demo-staging get pods` con las
 
 | Etapa | Qué rompí | Run en rojo | Run en verde | Minuto de detección |
 |-------|-----------|-------------|--------------|---------------------|
+| `sast` | `actions/checkout@v4` en `lint` (#21) | [40704482875](https://github.com/Jesusro-del/demo-cicd/actions/runs/40704482875) | [40705105624](https://github.com/Jesusro-del/demo-cicd/actions/runs/40705105624) | 0:24 |
+| `lint` | `<html>` sin `lang` (#20) | [40704478535](https://github.com/Jesusro-del/demo-cicd/actions/runs/40704478535) | [40705097076](https://github.com/Jesusro-del/demo-cicd/actions/runs/40705097076) | 0:26 |
+| `test-integration` | `proxy_pass` a `api:3001` (#22) | [40704490155](https://github.com/Jesusro-del/demo-cicd/actions/runs/40704490155) | [40705113679](https://github.com/Jesusro-del/demo-cicd/actions/runs/40705113679) | 1:26 |
+| `security` | `FROM node:16-alpine` (#23) | [40704495856](https://github.com/Jesusro-del/demo-cicd/actions/runs/40704495856) | [40705116777](https://github.com/Jesusro-del/demo-cicd/actions/runs/40705116777) | 2:48 |
+
+Los otros rojos reales de `deploy-staging` (shell con comillas, Secret vacío, runner apagado, Kubernetes apagado, 504 del smoke) están en la sección del B1: sirven para la defensa oral.
 
 ## B6: tiempos por job
 
