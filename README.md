@@ -37,7 +37,7 @@ flowchart LR
 | 5 | `package` | Docker Buildx, GitHub Packages (GHCR) | Que las tres imágenes construyan (amd64 y arm64) y se publiquen con tag `sha-<commit>` | Job en rojo; no hay imagen que escanear ni desplegar | PR y push a `main` |
 | 6 | `security` | Grype v0.121.0 (contenedor; `--fail-on high`, solo con parche) | Vulnerabilidades de cada imagen publicada; las aceptadas están en [`.grype.yaml`](.grype.yaml), una por una con su porqué y acotadas al binario | Job en rojo con la tabla de vulnerabilidades en el resumen; nada llega a DEV | PR y push a `main` |
 | 7 | `deploy-dev` | k3d (k3s v1.36.4), kubectl, Kustomize y OWASP ZAP | Despliega en un clúster creado dentro del runner; espera el rollout; smoke test, las 7 pruebas de integración y un baseline scan de ZAP contra Kubernetes |
-| 8 | `deploy-staging` | Runner propio (Windows), kubectl, Rancher Desktop | Con **aprobación manual** (environment `staging`): despliega la misma imagen, espera el rollout y a que se borren los pods viejos, y corre el smoke contra `http://localhost:30080` | Job en rojo; los datos de Postgres siguen en su volumen | Solo push a `main` (o `workflow_dispatch` sobre `main`), después de aprobar. Un despliegue pendiente se cancela si llega uno más nuevo |
+| 8 | `deploy-staging` | Runner propio (Windows), kubectl, Rancher Desktop | Con **aprobación manual** (environment `staging`): despliega la misma imagen, espera el rollout y a que se borren los pods viejos, y corre el smoke contra `http://localhost:30080` | Job en rojo; los datos de Postgres siguen en su volumen | Solo push a `main` (o `workflow_dispatch` sobre `main`), después de aprobar. Si llega un despliegue más nuevo, el anterior se cancela (`concurrency`) |
 
 `main` está protegida: no se puede hacer merge si falla `lint`, `sast`, `test-unit`, `test-integration`, `package` (×3) o `security` (×3). Dependabot propone actualizaciones semanales de acciones, npm e imágenes base, con 7 días de `cooldown`.
 
@@ -198,6 +198,8 @@ En los dos, STAGING no tenía nada que actualizar (en el "antes", los pods ya es
 - **`deploy-dev`:** con kind, 41 s eran el clúster y 19 s el rollout. Con k3d, el clúster baja a 12 s, pero el rollout sube a 35 s, porque el nodo arranca sin imágenes. La ganancia neta es de 14 s.
 
 **Qué haría para llegar al 25 %:** volver a Trivy en `security` (~−17 s, total ≈ 3:17, −19 %), y precargar las imágenes en el nodo de k3d mientras el clúster arranca (estimo −10 a −15 s). El ruido del runner también pesa: `test-integration` varió entre 38 y 54 s en runs iguales.
+
+**Qué no me funcionó: el `concurrency` de STAGING.** Lo agregué con `cancel-in-progress: false`, pensando que un despliegue nuevo cancelaría al pendiente. Pasó lo contrario. El job del PR #28, esperando la aprobación, ya ocupaba el grupo, y el despliegue del PR #29 se quedó en cola detrás de él ([40727836457](https://github.com/Jesusro-del/demo-cicd/actions/runs/40727836457) y [40731484066](https://github.com/Jesusro-del/demo-cicd/actions/runs/40731484066)). Hubo que rechazar el viejo a mano. Lo cambié a `cancel-in-progress: true`: gana el despliegue más nuevo. El precio es que un despliegue que ya está aplicando cambios se corta si llega otro en esos ~40 s; el siguiente lo completa, porque `kubectl apply` es idempotente.
 
 ## Bitácora de decisiones
 
