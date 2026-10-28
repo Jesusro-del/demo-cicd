@@ -58,12 +58,15 @@ jobs:
       #   El log de Actions es público.
       # shell: bash es obligatorio aquí: solo así GitHub usa -o pipefail. Sin él (bash -e a secas), si
       #   TruffleHog encuentra algo y falla, jq termina bien y el paso quedaría en verde: el escáner apagado.
+      # --branch con el commit del run: todo el historial que lleva a este commit, pero no las otras ramas.
+      #   Con fetch-depth: 0 el checkout trae todas, y un secreto en una rama ajena bloqueaba todos los PR.
       - name: TruffleHog, secretos en el historial de Git
         if: ${{ !cancelled() }}         # corre aunque Semgrep haya fallado: los dos escáneres informan siempre
         shell: bash
         run: |
           docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo:ro" trufflesecurity/trufflehog:3.99.3 \
-            git file:///repo --fail --no-update --json --results=verified,unverified,unknown \
+            git file:///repo --branch "$(git rev-parse HEAD)" \
+            --fail --no-update --json --results=verified,unverified,unknown \
             | jq -c '{detector: .DetectorName, verificado: .Verified, archivo: .SourceMetadata.Data.Git.file,
                       linea: .SourceMetadata.Data.Git.line, commit: .SourceMetadata.Data.Git.commit}'
 
