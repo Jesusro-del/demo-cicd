@@ -51,8 +51,13 @@ if (tipo === "pruebas") {
   }
   escribir(md);
 } else if (tipo === "grype") {
-  // Con --only-fixed, matches trae solo lo que tiene parche; las aceptadas en .grype.yaml van aparte,
-  // en ignoredMatches. Grype escribe la severidad con mayúscula inicial ("High").
+  // Con --only-fixed, matches trae solo lo que tiene parche. ignoredMatches mezcla dos cosas: lo que descarta
+  // --only-fixed (regla con fix-state) y lo aceptado en .grype.yaml (regla con vulnerability). Se separan.
+  // Grype escribe la severidad con mayúscula inicial ("High").
+  const ignoradas = datos.ignoredMatches ?? [];
+  const porRegla = (campo) => ignoradas.filter((m) => (m.appliedIgnoreRules ?? []).some((r) => r[campo]));
+  const aceptadas = porRegla("vulnerability");
+  const sinParche = ignoradas.filter((m) => !aceptadas.includes(m));
   const vulns = (datos.matches ?? []).map((m) => ({
     sev: m.vulnerability.severity, id: m.vulnerability.id,
     pkg: m.artifact.name, version: m.artifact.version, fix: (m.vulnerability.fix?.versions ?? []).join(", "),
@@ -61,12 +66,17 @@ if (tipo === "pruebas") {
   const cuenta = (sev) => vulns.filter((v) => v.sev === sev).length;
   const icono = frenan.length === 0 ? "✅" : "❌";
   let md = `### ${icono} Grype: ${titulo}\n\n`;
-  md += "Con parche disponible. Frenan `Critical` y `High`; las aceptadas en `.grype.yaml` no se cuentan.\n\n";
-  md += "| Critical | High | Medium | Low | Aceptadas |\n|:-:|:-:|:-:|:-:|:-:|\n";
-  md += `| ${cuenta("Critical")} | ${cuenta("High")} | ${cuenta("Medium")} | ${cuenta("Low")} | ${(datos.ignoredMatches ?? []).length} |\n`;
+  md += "Por severidad, las que tienen parche: frenan `Critical` y `High`. Aparte, las que no tienen parche (no frenan) y las aceptadas en `.grype.yaml`.\n\n";
+  md += "| Critical | High | Medium | Low | Sin parche | Aceptadas |\n|:-:|:-:|:-:|:-:|:-:|:-:|\n";
+  md += `| ${cuenta("Critical")} | ${cuenta("High")} | ${cuenta("Medium")} | ${cuenta("Low")} | ${sinParche.length} | ${aceptadas.length} |\n`;
   if (frenan.length) {
     md += "\n| Severidad | Vulnerabilidad | Paquete | Instalada | Corregida en |\n|---|---|---|---|---|\n";
     for (const v of frenan) md += `| ${v.sev} | ${celda(v.id)} | ${celda(v.pkg)} | ${celda(v.version)} | ${celda(v.fix)} |\n`;
+  }
+  if (aceptadas.length) {
+    md += `\n<details><summary>Aceptadas en .grype.yaml (${aceptadas.length})</summary>\n\n`;
+    md += aceptadas.map((m) => `${m.vulnerability.id} (${m.vulnerability.severity}, ${m.artifact.name} ${m.artifact.version})`).join(", ");
+    md += "\n\n</details>\n";
   }
   escribir(md);
 } else {
