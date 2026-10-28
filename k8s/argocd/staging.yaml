@@ -1,0 +1,25 @@
+# Reto 4: GitOps. Argo CD (dentro del clúster) mira k8s/overlays/staging en main y deja STAGING igual a Git.
+# El pipeline ya no hace kubectl apply: solo cambia los tags de las imágenes en el overlay y hace commit.
+#
+# Se aplica una sola vez, a mano (ver README.md de esta carpeta):
+#   kubectl apply -n argocd -f k8s/argocd/staging.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: staging
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Jesusro-del/demo-cicd.git   # público: Argo lo lee sin credenciales
+    targetRevision: main
+    path: k8s/overlays/staging
+  destination:
+    server: https://kubernetes.default.svc                  # el mismo clúster donde corre Argo CD
+    namespace: demo-staging
+  syncPolicy:
+    automated:
+      prune: true      # lo que se borra de Git se borra del clúster
+      selfHeal: true   # si alguien cambia algo a mano en el clúster, Argo lo devuelve a lo que dice Git
+    syncOptions:
+      - CreateNamespace=false   # demo-staging ya existe, con el Secret db-credenciales creado a mano

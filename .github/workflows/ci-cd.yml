@@ -313,6 +313,8 @@ jobs:
           kubectl -n demo-dev logs -l app=api --tail=50 || true
           kubectl -n demo-dev logs -l app=db  --tail=50 || true
 
+  # Reto 4 (GitOps): deploy-staging ya no toca el clúster. Con la aprobación, escribe en Git qué imagen va a
+  # STAGING (el bloque images de k8s/overlays/staging) y hace commit a main. Argo CD, dentro del clúster, lo aplica.
   deploy-staging:
     name: 8. Deploy STAGING (con aprobación)
     needs: deploy-dev
@@ -322,34 +324,72 @@ jobs:
     # Un solo despliegue a STAGING a la vez, y gana el más nuevo: si llega uno mientras otro espera la aprobación,
     # el que esperaba se cancela. Aprobarlo después desplegaría una versión vieja encima de la nueva (run del PR #19).
     # cancel-in-progress: true porque un job que espera la aprobación ya ocupa el grupo: con false, el nuevo quedaba
-    # en cola detrás del viejo (runs 40727836457 y 40731484066). El precio: si llega otro despliegue justo mientras
-    # uno aplica cambios, ese se corta; el siguiente lo completa, porque kubectl apply es idempotente.
+    # en cola detrás del viejo (runs 40727836457 y 40731484066).
     concurrency:
       group: deploy-staging
       cancel-in-progress: true
-    runs-on: self-hosted                      # el runner de mi laptop, donde kubectl apunta a Rancher Desktop
+    runs-on: ubuntu-latest                    # ya no necesita el runner propio: solo hace un commit
     environment:
       name: staging                           # con Required reviewers: el job espera la aprobación
       url: http://localhost:30080
+    permissions:
+      # El único job que puede escribir en el repositorio. El ruleset de main deja pasar a la app GitHub Actions
+      # (bypass) para este commit; todo lo demás sigue exigiendo PR y checks. Ver terraform/main.tf.
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main                           # el commit va encima de main, no del commit del run
+          sparse-checkout: k8s
+      - name: Escribir en el overlay la imagen que pasó por DEV
+        run: |
+          # sed y no kustomize edit: no hace falta otro binario y no reescribe el archivo (conserva los comentarios).
+          sed -i -E "s/^(    newTag: )sha-[0-9a-f]{40}$/\1sha-${{ github.sha }}/" k8s/overlays/staging/kustomization.yaml
+          git diff
+          # Que el overlay siga siendo válido y lleve las tres imágenes nuevas.
+          [ "$(kubectl kustomize k8s/overlays/staging | grep -c "image: .*:sha-${{ github.sha }}")" = 3 ]
+      - name: Commit a main (Argo CD lo aplica)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add k8s/overlays/staging/kustomization.yaml
+          if git diff --cached --quiet; then
+            echo "STAGING ya está en sha-${{ github.sha }}: no hay nada que cambiar"
+            exit 0
+          fi
+          git commit -m "STAGING: sha-${{ github.sha }}" \
+            -m "Aprobado en ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          # Si main avanzó mientras esperaba la aprobación, el commit se pone encima. Un push con GITHUB_TOKEN
+          # no dispara otro run del pipeline: no hay bucle.
+          git pull --rebase origin main
+          git push origin HEAD:main
+          echo "### STAGING: \`sha-${{ github.sha }}\` escrito en k8s/overlays/staging ($(git rev-parse --short HEAD))" >> "$GITHUB_STEP_SUMMARY"
+
+  # Argo CD aplica el cambio por su cuenta (revisa Git cada 60 s). Este job, en el runner propio, solo LEE el clúster:
+  # espera a que las tres imágenes sean las del commit, a que terminen los rollouts, y corre el smoke.
+  verify-staging:
+    name: 9. Verificar STAGING (Argo CD y smoke)
+    needs: deploy-staging
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: self-hosted                      # el runner de mi laptop, donde kubectl apunta a Rancher Desktop
     defaults:
       run:
         # Git Bash con su ruta completa: en Windows, "bash" a secas puede ser el de WSL, que no ve el kubectl
-        # de Rancher Desktop. Mismos flags que GitHub usa para shell: bash.
-        # PROGRA~1 es el nombre corto (8.3) de "Program Files": el runner corta el shell en el primer espacio
-        # y no entiende comillas, así que la ruta no puede llevar espacios.
+        # de Rancher Desktop. PROGRA~1 es el nombre corto (8.3) de "Program Files": el runner corta el shell
+        # en el primer espacio y no entiende comillas, así que la ruta no puede llevar espacios.
         shell: C:\PROGRA~1\Git\bin\bash.exe --noprofile --norc -eo pipefail {0}
     steps:
-      # B6: en el runner de Windows el checkout completo tardaba 8 s. STAGING solo usa los manifiestos y los scripts.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          sparse-checkout: |
-            k8s
-            scripts
-      - run: echo "PREFIJO=ghcr.io/$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')/demo-cicd" >> "$GITHUB_ENV"
-      - name: Desplegar la misma imagen que pasó por DEV
-        run: scripts/desplegar.sh k8s/overlays/staging "$PREFIJO" "sha-${{ github.sha }}"
-      - name: Esperar el rollout
+          sparse-checkout: scripts
+      - name: Esperar a que Argo CD aplique sha-${{ github.sha }}
         run: |
+          for i in $(seq 1 60); do
+            nuevas=$(kubectl -n demo-staging get deploy -o jsonpath='{range .items[*]}{.spec.template.spec.containers[0].image}{"\n"}{end}' | grep -c ":sha-${{ github.sha }}$" || true)
+            [ "$nuevas" = 3 ] && echo "Argo CD aplicó sha-${{ github.sha }}" && break
+            [ "$i" = 60 ] && { echo "En 5 minutos Argo CD no aplicó sha-${{ github.sha }}"; kubectl -n argocd get application staging; exit 1; }
+            sleep 5
+          done
           kubectl -n demo-staging rollout status deploy/db  --timeout=180s
           kubectl -n demo-staging rollout status deploy/api --timeout=180s
           kubectl -n demo-staging rollout status deploy/web --timeout=180s
@@ -372,7 +412,9 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           {
-            echo "### STAGING (Rancher Desktop): imágenes \`sha-${{ github.sha }}\`"
+            echo "### STAGING (Rancher Desktop, Argo CD): imágenes \`sha-${{ github.sha }}\`"
+            echo
+            echo "Argo CD: $(kubectl -n argocd get application staging -o jsonpath='{.status.sync.status}, {.status.health.status}, revisión {.status.sync.revision}' 2>/dev/null || echo 'sin datos')"
             echo
             echo '```'
             cat smoke.txt 2>/dev/null || echo "El smoke no llegó a correr."

@@ -40,6 +40,15 @@ resource "github_repository_ruleset" "main" {
     }
   }
 
+  # Reto 4 (GitOps): deploy-staging hace commit del tag nuevo en k8s/overlays/staging directo a main.
+  # 15368 es la app GitHub Actions. Solo pasa un job con permissions: contents: write, y hoy es solo deploy-staging
+  # (después de la aprobación). Los workflows de forks reciben un token de solo lectura.
+  bypass_actors {
+    actor_id    = 15368
+    actor_type  = "Integration"
+    bypass_mode = "always"
+  }
+
   rules {
     deletion         = true
     non_fast_forward = true

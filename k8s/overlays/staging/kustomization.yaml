@@ -13,3 +13,16 @@ labels:
 patches:
   - path: web-nodeport.yaml
   - path: api-replicas.yaml
+
+# Reto 4 (GitOps): qué imagen corre en STAGING está escrito aquí, en Git. Argo CD lo lee y lo aplica.
+# El job deploy-staging solo cambia estos tres newTag (con sed) y hace commit a main; ya no toca el clúster.
+images:
+  - name: demo-cicd-web
+    newName: ghcr.io/jesusro-del/demo-cicd-web
+    newTag: sha-8228b6dfd346627ee1f348b10d7aa18639481538
+  - name: demo-cicd-api
+    newName: ghcr.io/jesusro-del/demo-cicd-api
+    newTag: sha-8228b6dfd346627ee1f348b10d7aa18639481538
+  - name: demo-cicd-db
+    newName: ghcr.io/jesusro-del/demo-cicd-db
+    newTag: sha-8228b6dfd346627ee1f348b10d7aa18639481538
