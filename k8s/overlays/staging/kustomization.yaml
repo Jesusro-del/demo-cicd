@@ -15,7 +15,8 @@ patches:
   - path: api-replicas.yaml
 
 # Reto 4 (GitOps): qué imagen corre en STAGING está escrito aquí, en Git. Argo CD lo lee y lo aplica.
-# El job deploy-staging solo cambia estos tres newTag (con sed) y hace commit a main; ya no toca el clúster.
+# En main, estos tags son solo el punto de partida. Lo que corre en STAGING está en la rama gitops/staging:
+# deploy-staging cambia estos tres newTag (con sed) y publica esa rama; Argo CD la aplica.
 images:
   - name: demo-cicd-web
     newName: ghcr.io/jesusro-del/demo-cicd-web

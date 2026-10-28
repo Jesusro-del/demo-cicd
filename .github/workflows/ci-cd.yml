@@ -313,8 +313,9 @@ jobs:
           kubectl -n demo-dev logs -l app=api --tail=50 || true
           kubectl -n demo-dev logs -l app=db  --tail=50 || true
 
-  # Reto 4 (GitOps): deploy-staging ya no toca el clúster. Con la aprobación, escribe en Git qué imagen va a
-  # STAGING (el bloque images de k8s/overlays/staging) y hace commit a main. Argo CD, dentro del clúster, lo aplica.
+  # Reto 4 (GitOps): deploy-staging ya no toca el clúster. Con la aprobación, publica en la rama gitops/staging
+  # qué versión va a STAGING (manifiestos y tags de imagen del mismo commit). Argo CD, dentro del clúster, mira esa
+  # rama y la aplica. No escribe en main: un repositorio personal no puede exceptuar a GitHub Actions del ruleset.
   deploy-staging:
     name: 8. Deploy STAGING (con aprobación)
     needs: deploy-dev
@@ -333,14 +334,12 @@ jobs:
       name: staging                           # con Required reviewers: el job espera la aprobación
       url: http://localhost:30080
     permissions:
-      # El único job que puede escribir en el repositorio. El ruleset de main deja pasar a la app GitHub Actions
-      # (bypass) para este commit; todo lo demás sigue exigiendo PR y checks. Ver terraform/main.tf.
+      # El único job que puede escribir en el repositorio, y solo publica la rama gitops/staging.
+      # main sigue protegida por el ruleset: este job no la toca.
       contents: write
     steps:
+      # El commit del run (el default del checkout): manifiestos e imágenes de STAGING salen del mismo commit.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: main                           # el commit va encima de main, no del commit del run
-          sparse-checkout: k8s
       - name: Escribir en el overlay la imagen que pasó por DEV
         run: |
           # sed y no kustomize edit: no hace falta otro binario y no reescribe el archivo (conserva los comentarios).
@@ -348,22 +347,18 @@ jobs:
           git diff
           # Que el overlay siga siendo válido y lleve las tres imágenes nuevas.
           [ "$(kubectl kustomize k8s/overlays/staging | grep -c "image: .*:sha-${{ github.sha }}")" = 3 ]
-      - name: Commit a main (Argo CD lo aplica)
+      - name: Publicar en gitops/staging (Argo CD lo aplica)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add k8s/overlays/staging/kustomization.yaml
-          if git diff --cached --quiet; then
-            echo "STAGING ya está en sha-${{ github.sha }}: no hay nada que cambiar"
-            exit 0
-          fi
-          git commit -m "STAGING: sha-${{ github.sha }}" \
+          git diff --cached --quiet || git commit -m "STAGING: sha-${{ github.sha }}" \
             -m "Aprobado en ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          # Si main avanzó mientras esperaba la aprobación, el commit se pone encima. Un push con GITHUB_TOKEN
-          # no dispara otro run del pipeline: no hay bucle.
-          git pull --rebase origin main
-          git push origin HEAD:main
-          echo "### STAGING: \`sha-${{ github.sha }}\` escrito en k8s/overlays/staging ($(git rev-parse --short HEAD))" >> "$GITHUB_STEP_SUMMARY"
+          # --force: gitops/staging es siempre "este commit de main + el tag". No se mezcla con lo anterior: se reemplaza.
+          # La historia de qué se desplegó y quién lo aprobó queda en los runs y en Argo CD.
+          # Un push con GITHUB_TOKEN no dispara otro run del pipeline: no hay bucle.
+          git push --force origin HEAD:refs/heads/gitops/staging
+          echo "### STAGING: \`sha-${{ github.sha }}\` publicado en gitops/staging ($(git rev-parse --short HEAD))" >> "$GITHUB_STEP_SUMMARY"
 
   # Argo CD aplica el cambio por su cuenta (revisa Git cada 60 s). Este job, en el runner propio, solo LEE el clúster:
   # espera a que las tres imágenes sean las del commit, a que terminen los rollouts, y corre el smoke.

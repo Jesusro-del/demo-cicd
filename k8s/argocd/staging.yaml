@@ -1,5 +1,6 @@
-# Reto 4: GitOps. Argo CD (dentro del clúster) mira k8s/overlays/staging en main y deja STAGING igual a Git.
-# El pipeline ya no hace kubectl apply: solo cambia los tags de las imágenes en el overlay y hace commit.
+# Reto 4: GitOps. Argo CD (dentro del clúster) mira k8s/overlays/staging en la rama gitops/staging y deja
+# STAGING igual a Git.
+# El pipeline ya no hace kubectl apply: con la aprobación, publica esa rama (el commit de main con el tag nuevo).
 #
 # Se aplica una sola vez, a mano (ver README.md de esta carpeta):
 #   kubectl apply -n argocd -f k8s/argocd/staging.yaml
@@ -12,7 +13,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/Jesusro-del/demo-cicd.git   # público: Argo lo lee sin credenciales
-    targetRevision: main
+    targetRevision: gitops/staging         # la publica deploy-staging; main no se toca (ver ci-cd.yml)
     path: k8s/overlays/staging
   destination:
     server: https://kubernetes.default.svc                  # el mismo clúster donde corre Argo CD
