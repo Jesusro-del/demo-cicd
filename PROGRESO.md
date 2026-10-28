@@ -6,9 +6,9 @@ Fecha límite: 30/10/2026 23:59. Repositorio: https://github.com/Jesusro-del/dem
 
 | Ítem | Estado | PR | Run |
 |------|--------|----|-----|
-| B1 Pipeline de la guía | 🟡 Falta Dependabot y ruleset | #1–#7 | [main ✅ STAGING](https://github.com/Jesusro-del/demo-cicd/actions/runs/40559516916) |
+| B1 Pipeline de la guía | ✅ Hecho (falta solo tu captura) | #1–#8, #13, #17, #18 | [main ✅ STAGING](https://github.com/Jesusro-del/demo-cicd/actions/runs/40559516916) · [Dependabot ✅ STAGING](https://github.com/Jesusro-del/demo-cicd/actions/runs/40702839413) |
 | B2 Dos herramientas cambiadas | ⬜ Pendiente | | |
-| B3 Cuatro etapas rotas | ⬜ Pendiente | | |
+| B3 Cuatro etapas rotas | ✅ Hecho (tabla en el README) | #20–#23 (cerrados sin merge) | 4 rojos y 4 verdes, ver abajo |
 | B4 Endpoint de estadísticas | ⬜ Pendiente | | |
 | B5 README, badge y resumen | ⬜ Pendiente | | |
 | B6 Pipeline 25 % más rápido | ⬜ Pendiente | | |
@@ -24,7 +24,12 @@ Fecha límite: 30/10/2026 23:59. Repositorio: https://github.com/Jesusro-del/dem
 | 5 | `pipeline/deploy-dev` | Job `deploy-dev` (kind efímero). En el PR: skipped. Con `workflow_dispatch`: kind 41 s, rollout 19 s, smoke e integración 8 s | [#5](https://github.com/Jesusro-del/demo-cicd/pull/5) | [✅ PR](https://github.com/Jesusro-del/demo-cicd/actions/runs/40554232446) · [✅ dispatch con DEV](https://github.com/Jesusro-del/demo-cicd/actions/runs/40554244385) |
 | 6 | `pipeline/deploy-staging` | Job `deploy-staging` (runner propio, aprobación) | [#6](https://github.com/Jesusro-del/demo-cicd/pull/6) | [✅ PR](https://github.com/Jesusro-del/demo-cicd/actions/runs/40556389792) |
 | 6b | `fix/staging-shell` | Ruta 8.3 de Git Bash: el runner no admite comillas en `shell` | [#7](https://github.com/Jesusro-del/demo-cicd/pull/7) | [🔴 main sin la corrección](https://github.com/Jesusro-del/demo-cicd/actions/runs/40557928658) |
-| 7 | `pipeline/dependabot` | `.github/dependabot.yml` con `cooldown` | | |
+| 7 | `pipeline/dependabot` | `.github/dependabot.yml` con `cooldown` | [#8](https://github.com/Jesusro-del/demo-cicd/pull/8) | [✅ PR](https://github.com/Jesusro-del/demo-cicd/actions/runs/40562825593) · [🔴 main: 504 en el smoke](https://github.com/Jesusro-del/demo-cicd/actions/runs/40563729456) |
+| 7b | `fix/api-prestop` | `preStop` de 5 s en `api` | [#17](https://github.com/Jesusro-del/demo-cicd/pull/17) | [🔴 main: 504 otra vez](https://github.com/Jesusro-del/demo-cicd/actions/runs/40696551464) |
+| 7c | `fix/staging-estable` | Esperar a que se borren los pods viejos antes del smoke; `proxy_connect_timeout 3s` en nginx | [#18](https://github.com/Jesusro-del/demo-cicd/pull/18) | [✅ main con STAGING](https://github.com/Jesusro-del/demo-cicd/actions/runs/40701588355) |
+| — | Dependabot | `globals` 15 → 17, mezclado por el pipeline | [#13](https://github.com/Jesusro-del/demo-cicd/pull/13) | [✅ main con STAGING](https://github.com/Jesusro-del/demo-cicd/actions/runs/40702839413) |
+
+Ruleset `main protegida` (id 25984021): PR obligatorio, los 10 checks de `lint`, `sast`, `test-unit`, `test-integration`, `package` ×3 y `security` ×3, sin force push ni borrado.
 
 ### Trivy en CRITICAL,HIGH: de 83 HIGH a 0
 
@@ -44,12 +49,34 @@ Fecha límite: 30/10/2026 23:59. Repositorio: https://github.com/Jesusro-del/dem
 3. Verde: rollout y smoke contra `http://localhost:30080`.
 
 Hecho: paquetes públicos, environment `staging` con revisor (sin *prevent self-review*), runner `FM_AD_ICB_DT_08` registrado, namespace y Secret de `demo-staging`.
-Pendiente: Dependabot con un PR suyo mezclado, ruleset de `main`, captura de los pods, comprobar que los mensajes sobreviven a un nuevo despliegue.
+
+### El 504 del smoke de STAGING (27 y 28/10)
+
+Después del primer despliegue, cada despliegue nuevo a STAGING fallaba en el smoke con `POST /api/mensajes devolvió 504`. nginx registraba `upstream timed out ... while connecting to upstream` hacia el Service `api`.
+1. Primera hipótesis: el Service seguía enviando conexiones a un pod viejo de `api` ya apagado. Se agregó `preStop` de 5 s (#17). **No bastó**: el 504 se repitió.
+2. Reproducción con una sonda (`GET /api/mensajes` cada 0,5 s) durante un reinicio de los tres Deployments: unos 10 s de errores (6 × 500 mientras `db` se recrea con `Recreate`, 2 conexiones fallidas al cambiar `web`) y todo 200 al terminar los rollouts. El smoke arrancaba justo cuando `rollout status` devolvía el control, con pods viejos todavía borrándose.
+3. Solución (#18): esperar a que no quede ningún pod con `deletionTimestamp` antes del smoke, y `proxy_connect_timeout 3s` en nginx (por defecto 60 s). En el run siguiente el paso esperó unos 6 s al pod viejo de `api` y el smoke pasó.
+
+Los ~10 s de errores durante un despliegue siguen existiendo: son consecuencia de un solo Postgres con `Recreate`.
+
+Otros rojos del 28/10, por el entorno: el runner apagado (job en cola hasta `run.cmd`) y Kubernetes de Rancher Desktop apagado (`connection refused` a `127.0.0.1:6443`).
+
+### Persistencia de STAGING
+
+Los mensajes 1, 2 y 3 sobrevivieron a cuatro despliegues (`b9aafef` → `f1a346b` → `efe8da2` → `1ceaa7a` → `966c5a8`); Postgres arranca con "database directory appears to contain a database; Skipping initialization".
+
+Pendiente para la entrega: captura de `kubectl -n demo-staging get pods` con las imágenes `sha-<commit>`.
 
 ## B3: tiempos de detección
 
 | Etapa | Qué rompí | Run en rojo | Run en verde | Minuto de detección |
 |-------|-----------|-------------|--------------|---------------------|
+| `sast` | `actions/checkout@v4` en `lint` (#21) | [40704482875](https://github.com/Jesusro-del/demo-cicd/actions/runs/40704482875) | [40705105624](https://github.com/Jesusro-del/demo-cicd/actions/runs/40705105624) | 0:24 |
+| `lint` | `<html>` sin `lang` (#20) | [40704478535](https://github.com/Jesusro-del/demo-cicd/actions/runs/40704478535) | [40705097076](https://github.com/Jesusro-del/demo-cicd/actions/runs/40705097076) | 0:26 |
+| `test-integration` | `proxy_pass` a `api:3001` (#22) | [40704490155](https://github.com/Jesusro-del/demo-cicd/actions/runs/40704490155) | [40705113679](https://github.com/Jesusro-del/demo-cicd/actions/runs/40705113679) | 1:26 |
+| `security` | `FROM node:16-alpine` (#23) | [40704495856](https://github.com/Jesusro-del/demo-cicd/actions/runs/40704495856) | [40705116777](https://github.com/Jesusro-del/demo-cicd/actions/runs/40705116777) | 2:48 |
+
+Los otros rojos reales de `deploy-staging` (shell con comillas, Secret vacío, runner apagado, Kubernetes apagado, 504 del smoke) están en la sección del B1: sirven para la defensa oral.
 
 ## B6: tiempos por job
 
