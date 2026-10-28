@@ -20,10 +20,10 @@ patches:
 images:
   - name: demo-cicd-web
     newName: ghcr.io/jesusro-del/demo-cicd-web
-    newTag: sha-1c9b424d5c0fedc7640ded9df544ad733e1c1299
+    newTag: sha-76e2e11eb039352c235b39492b7ed48d74c87a8a
   - name: demo-cicd-api
     newName: ghcr.io/jesusro-del/demo-cicd-api
-    newTag: sha-1c9b424d5c0fedc7640ded9df544ad733e1c1299
+    newTag: sha-76e2e11eb039352c235b39492b7ed48d74c87a8a
   - name: demo-cicd-db
     newName: ghcr.io/jesusro-del/demo-cicd-db
-    newTag: sha-1c9b424d5c0fedc7640ded9df544ad733e1c1299
+    newTag: sha-76e2e11eb039352c235b39492b7ed48d74c87a8a
