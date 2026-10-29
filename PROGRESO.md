@@ -119,6 +119,6 @@ El "antes" es el primer run completo de `main` en verde, sin contar la espera de
 | R1 DAST con OWASP ZAP | ✅ Hecho y en STAGING (bitácora en el README) | [#29](https://github.com/Jesusro-del/demo-cicd/pull/29) | [rojo, 7 alertas](https://github.com/Jesusro-del/demo-cicd/actions/runs/40728141052) · [verde con informe](https://github.com/Jesusro-del/demo-cicd/actions/runs/40729885668) |
 | R6 Terraform (ruleset y ambientes) | ✅ `plan`: 3 to import, 0 to change | [#31](https://github.com/Jesusro-del/demo-cicd/pull/31) | (se verifica con `terraform plan`, no en Actions) |
 | R4 GitOps con Argo CD | ✅ Argo CD en Rancher Desktop, rama `gitops/staging`, self-heal probado | [#32](https://github.com/Jesusro-del/demo-cicd/pull/32) | [primer despliegue GitOps](https://github.com/Jesusro-del/demo-cicd/actions/runs/40743163411) · commit [`0d0a17d`](https://github.com/Jesusro-del/demo-cicd/commit/0d0a17d817cfda00a2956c9ff4e7ac6144503051) |
-
 | R3 Observabilidad (Prometheus, Grafana, alerta) | ✅ Alerta probada: pending 14:49:50, firing 14:50:50–14:52:45 UTC (29/10) | [#34](https://github.com/Jesusro-del/demo-cicd/pull/34) | (se verifica en Prometheus y Grafana, no en Actions) |
+
 Pendiente para la entrega del R4: captura de Argo CD en *Synced* con la revisión de `gitops/staging` (ver `k8s/argocd/README.md`).
