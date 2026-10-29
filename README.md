@@ -298,6 +298,36 @@ En los dos, STAGING no tenía nada que actualizar (en el "antes", los pods ya es
   - El orden importa. Si la `Application` hubiera existido antes de que el overlay tuviera el bloque `images`, Argo CD habría desplegado `demo-cicd-web:local`, que no existe en ningún registro.
 - **¿Qué gané y qué perdí?** Gané que el pipeline ya **no tiene acceso al clúster**: STAGING se puede reconstruir desde Git, y cualquier cambio manual se revierte solo. El runner propio ya no despliega: solo lee para verificar, y se podría quitar si aceptara no correr el smoke desde el pipeline. Perdí inmediatez: el cambio tarda hasta 60 s en aplicarse (no hay webhook, porque GitHub no alcanza mi laptop). Y la depuración pasa por dos lugares: si algo falla después del commit, hay que mirar Argo CD, no el log del job.
 
+### Reto 3: Observabilidad en STAGING
+
+- **Decisión:** Prometheus v3.1.0 y Grafana 11.4.0 en el namespace `observabilidad`, con manifiestos propios ([`observabilidad/`](observabilidad/)) que despliega una segunda `Application` de Argo CD. Prometheus descubre las réplicas de `api` en `demo-staging` por sus anotaciones `prometheus.io/*` (`kubernetes_sd_configs`, con un ClusterRole de solo lectura de pods). Evalúa la alerta [`TasaDeErrores5xxAlta`](observabilidad/k8s/alertas.yml): más del 5 % de respuestas 5xx durante un minuto. Grafana trae el dashboard RED del repositorio ya cargado; `kustomize` reutiliza el mismo archivo que usa Compose.
+- **Alternativas que evalué:**
+  - *`kube-prometheus-stack` (Helm)*: es el estándar y trae operador, Alertmanager, métricas de nodos y decenas de dashboards. Pero usa ~1.5 GB de RAM y genera miles de líneas que no sabría explicar. Para observar una API con una alerta, alcanzaban dos Deployments.
+  - *Prometheus Operator con `ServiceMonitor` y `PrometheusRule`*: más declarativo, pero suma un operador y sus CRD para dos objetos.
+  - *`kubectl apply` a mano*: más directo, pero fuera de Git. Con Argo CD, la observabilidad también se reconstruye desde el repositorio y se corrige sola.
+  - *Provocar los errores con una ruta que no existe*: da 404, que es un 4xx y no cuenta para la alerta. *Apagar `db` con `kubectl scale`*: Argo CD lo revierte en segundos (self-heal) y `/api/health` falla, así que Kubernetes también reacciona. Elegí renombrar la tabla `mensajes`: las rutas que la usan responden 500, `/api/health` (`SELECT 1`) sigue sano, nadie reinicia nada y se deshace con un solo comando.
+- **Por qué elegí esta:** cada línea se puede explicar, y reutiliza lo que el repositorio ya traía: las anotaciones del Deployment, el dashboard y el datasource.
+- **Fuentes consultadas:**
+  - [`kubernetes_sd_config` y relabeling](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#kubernetes_sd_config).
+  - [Reglas de alerta](https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/): `for` y los estados *pending* y *firing*.
+  - [Provisioning de Grafana](https://grafana.com/docs/grafana/latest/administration/provisioning/).
+  - [`configMapGenerator`](https://kubectl.docs.kubernetes.io/references/kustomize/kustomization/configmapgenerator/).
+- **Cómo lo verifiqué:** Prometheus encontró las 2 réplicas de `api` (`up`). Con [`observabilidad/probar-alerta.sh`](observabilidad/probar-alerta.sh), que genera tráfico de lectura, renombra la tabla y la restaura siempre, aunque el script se corte, el 29/10 la alerta siguió el ciclo completo:
+
+  | Hora (UTC) | Estado |
+  |---|---|
+  | 14:49:45 | Los 5xx pasan del 5 % (máximo: 84,3 %) |
+  | 14:49:50 – 14:50:45 | *Pending*: el `for: 1m` |
+  | 14:50:50 – 14:52:45 | **Firing** |
+  | ~14:52:50 | Tabla restaurada; vuelve a *inactive* |
+
+  Capturas del dashboard RED con el tráfico y el pico de 5xx, y de la alerta en *Firing*. PR: [#34](https://github.com/Jesusro-del/demo-cicd/pull/34).
+- **Qué no me funcionó:**
+  - El primer intento de la prueba no llegó a renombrar la tabla. Prometheus no registró ni un 5xx, y las primeras capturas mostraban la alerta en *Normal*. Hubo que esperar a que el script estuviera de verdad en la fase de errores.
+  - Inyectar el fallo desde mi lado: el entorno no me dejó ejecutar comandos dentro de Postgres, así que la prueba quedó en un script del repositorio. Así además es reproducible.
+  - Las métricas viven en un `emptyDir`: si el pod de Prometheus se recrea, se pierde el historial. Al día siguiente seguía ahí solo porque el pod no se recreó.
+- **¿Qué métrica agregaría para saber si la base se está volviendo lenta?** Un histograma de la duración de las consultas, medido en la API alrededor de `pool.query()`, por ejemplo `db_query_duration_seconds{consulta="listar|crear|contar"}`. También las conexiones en uso y en espera del pool de `pg` (`pool.totalCount`, `pool.waitingCount`) como *gauges*. Hoy `http_request_duration_seconds` mezcla el tiempo de la base con el de la API. Con una métrica propia se ve directamente cuándo es la base la que se pone lenta, y con un p95 sobre ella se podría alertar antes de que los usuarios lo noten.
+
 ## Lo que no está aquí, a propósito
 
 - `.github/workflows/`: el pipeline. Es el trabajo de la guía y del laboratorio
